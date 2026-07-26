@@ -49,6 +49,8 @@ public partial class NoteWindow : Window
     private int _resizeEdge;
     private System.Drawing.Point _resizeStartCursor;
     private Rect _resizeStartBounds;
+    private bool _inkInputActive;
+    private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
     public NoteWindow(NoteData note, AppController controller)
     {
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
@@ -60,6 +62,12 @@ public partial class NoteWindow : Window
         PreviewMouseMove += Resize_MouseMove;
         PreviewMouseLeftButtonUp += Resize_MouseLeftButtonUp;
         Surface.PreviewMouseLeftButtonDown += Surface_PreviewMouseLeftButtonDown;
+        Ink.PreviewStylusDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
+        Ink.PreviewStylusMove += (_, e) => { if (_inkInputActive) AutoExpandForInk(e.GetPosition(Ink)); };
+        Ink.PreviewStylusUp += (_, _) => _inkInputActive = false;
+        Ink.PreviewMouseLeftButtonDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
+        Ink.PreviewMouseMove += (_, e) => { if (_inkInputActive && e.LeftButton == MouseButtonState.Pressed) AutoExpandForInk(e.GetPosition(Ink)); };
+        Ink.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
         MouseLeave += (_, _) => { if (_resizeEdge == 0) Mouse.OverrideCursor = null; };
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
@@ -208,6 +216,11 @@ public partial class NoteWindow : Window
             _history.Execute(new DelegateCommand(() => _note.Elements.Remove(element), () => _note.Elements.Add(element)));
             ClearObjectSelection(); RestoreElements(); _vm.Touch(); e.Handled = true;
         }
+        else if (e.Key == Key.Escape && Ink.EditingMode != InkCanvasEditingMode.None)
+        {
+            Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; _inkInputActive = false;
+            ClearObjectSelection(); Editor.Focus(); Keyboard.Focus(Editor); e.Handled = true;
+        }
         else if (e.Key == Key.Escape) ClearObjectSelection();
     }
     private void ChangePenThickness(int direction)
@@ -227,6 +240,20 @@ public partial class NoteWindow : Window
             _controller.State.Settings.DefaultPenThickness = thickness;
             _controller.ScheduleSave();
         }
+    }
+    private void AutoExpandForInk(System.Windows.Point point)
+    {
+        const double edgeThreshold = 18;
+        const double expansion = 48;
+        const double maximumDimension = 2400;
+        var now = DateTime.UtcNow;
+        if ((now - _lastInkAutoExpandUtc).TotalMilliseconds < 80) return;
+        var expandWidth = point.X >= Ink.ActualWidth - edgeThreshold && Width < maximumDimension;
+        var expandHeight = point.Y >= Ink.ActualHeight - edgeThreshold && Height < maximumDimension;
+        if (!expandWidth && !expandHeight) return;
+        _lastInkAutoExpandUtc = now;
+        if (expandWidth) Width = Math.Min(maximumDimension, Width + expansion);
+        if (expandHeight) Height = Math.Min(maximumDimension, Height + expansion);
     }
     private bool TryPasteRich()
     {
@@ -308,9 +335,15 @@ public partial class NoteWindow : Window
     private void AddAttachment(FileAttachmentElement element) { _history.Execute(new DelegateCommand(() => _note.Elements.Add(element), () => _note.Elements.Remove(element))); RestoreElements(); SelectObject(element); _vm.Touch(); }
     private void RenderAttachment(FileAttachmentElement element)
     {
-        var button = new Button { Content = (File.Exists(element.OriginalFilePath) ? "📎 " : "⚠ ") + element.DisplayName, Padding = new Thickness(8, 4, 8, 4), ToolTip = element.OriginalFilePath };
+        var label = new TextBlock { Text = (File.Exists(element.OriginalFilePath) ? "📎 " : "⚠ ") + element.DisplayName, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
+        var button = new Button { Content = label, Width = element.Width, Height = element.Height, Padding = new Thickness(8, 4, 8, 4), ToolTip = element.OriginalFilePath, Cursor = Cursors.SizeAll, HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch };
         button.Tag = element; Canvas.SetLeft(button, element.X); Canvas.SetTop(button, element.Y); Panel.SetZIndex(button, element.ZIndex); ObjectCanvas.Children.Add(button); AttachObjectInteraction(button, element);
-        button.MouseDoubleClick += (_, _) => { try { if (!File.Exists(element.OriginalFilePath)) { MessageBox.Show("첨부 파일을 찾을 수 없습니다."); return; } Process.Start(new ProcessStartInfo(element.OriginalFilePath) { UseShellExecute = true }); } catch { MessageBox.Show("첨부 파일을 열 수 없습니다."); } };
+        AddAttachmentHandles(button, element);
+    }
+    private static void OpenAttachment(FileAttachmentElement element)
+    {
+        try { if (!File.Exists(element.OriginalFilePath)) { MessageBox.Show("첨부 파일을 찾을 수 없습니다."); return; } Process.Start(new ProcessStartInfo(element.OriginalFilePath) { UseShellExecute = true }); }
+        catch { MessageBox.Show("첨부 파일을 열 수 없습니다."); }
     }
     private void BeginCaptionEdit(ImageElement element)
     {
@@ -334,19 +367,22 @@ public partial class NoteWindow : Window
     }
     private void AttachObjectInteraction(FrameworkElement visual, NoteElement element)
     {
-        visual.MouseLeftButtonDown += (_, e) =>
+        visual.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler((_, e) =>
         {
+            if (e.ChangedButton != MouseButton.Left) return;
             if (e.ClickCount >= 2 && element is ImageElement imageElement) { SelectObject(element); BeginCaptionEdit(imageElement); e.Handled = true; return; }
+            if (e.ClickCount >= 2 && element is FileAttachmentElement attachmentElement) { SelectObject(element); OpenAttachment(attachmentElement); e.Handled = true; return; }
             SelectObject(element); _dragOrigin = e.GetPosition(ObjectCanvas); _elementOrigin = GetElementPosition(element); visual.CaptureMouse(); e.Handled = true;
-        };
-        visual.MouseMove += (_, e) =>
+        }), true);
+        visual.AddHandler(Mouse.PreviewMouseMoveEvent, new System.Windows.Input.MouseEventHandler((_, e) =>
         {
             if (!visual.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed) return;
             var point = e.GetPosition(ObjectCanvas); var x = Math.Clamp(_elementOrigin.X + point.X - _dragOrigin.X, 0, Math.Max(0, ObjectCanvas.ActualWidth - visual.ActualWidth)); var y = Math.Clamp(_elementOrigin.Y + point.Y - _dragOrigin.Y, 0, Math.Max(0, ObjectCanvas.ActualHeight - visual.ActualHeight));
-            SetElementPosition(element, x, y); Canvas.SetLeft(visual, x); Canvas.SetTop(visual, y); if (element is ImageElement image) { PositionHandles(image); foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(c => ReferenceEquals(c.Tag, image))) { Canvas.SetLeft(caption, x); Canvas.SetTop(caption, y + image.Height + 2); } }
-        };
-        visual.MouseLeftButtonUp += (_, e) =>
+            SetElementPosition(element, x, y); Canvas.SetLeft(visual, x); Canvas.SetTop(visual, y); if (element is ImageElement image) { PositionHandles(image); foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(c => ReferenceEquals(c.Tag, image))) { Canvas.SetLeft(caption, x); Canvas.SetTop(caption, y + image.Height + 2); } } else if (element is FileAttachmentElement attachment) PositionAttachmentHandles(attachment);
+        }), true);
+        visual.AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler((_, e) =>
         {
+            if (e.ChangedButton != MouseButton.Left) return;
             if (!visual.IsMouseCaptured) return; visual.ReleaseMouseCapture(); var start = _elementOrigin; var end = GetElementPosition(element);
             if (start != end)
             {
@@ -354,7 +390,7 @@ public partial class NoteWindow : Window
                 _vm.Touch(); RestoreElements(); SelectObject(element);
             }
             e.Handled = true;
-        };
+        }), true);
     }
     private void AddImageHandles(FrameworkElement image, ImageElement element)
     {
@@ -385,12 +421,64 @@ public partial class NoteWindow : Window
             Canvas.SetLeft(thumb, left); Canvas.SetTop(thumb, top); Panel.SetZIndex(thumb, int.MaxValue);
         }
     }
+    private void AddAttachmentHandles(FrameworkElement visual, FileAttachmentElement element)
+    {
+        foreach (var handle in Enum.GetValues<ResizeHandle>())
+        {
+            var cursor = handle switch
+            {
+                ResizeHandle.TopLeft or ResizeHandle.BottomRight => Cursors.SizeNWSE,
+                ResizeHandle.TopRight or ResizeHandle.BottomLeft => Cursors.SizeNESW,
+                ResizeHandle.Left or ResizeHandle.Right => Cursors.SizeWE,
+                _ => Cursors.SizeNS
+            };
+            var thumb = new Thumb { Width = 10, Height = 10, Background = Brushes.White, BorderBrush = Brushes.DodgerBlue, BorderThickness = new Thickness(1), Cursor = cursor, Tag = (element, handle), Visibility = ReferenceEquals(_selectedElement, element) ? Visibility.Visible : Visibility.Collapsed };
+            (double X, double Y, double Width, double Height) start = default;
+            thumb.DragStarted += (_, _) => start = (element.X, element.Y, element.Width, element.Height);
+            thumb.DragDelta += (_, e) =>
+            {
+                var resized = ObjectSizing.ResizeFree(element.X, element.Y, element.Width, element.Height, e.HorizontalChange, e.VerticalChange, handle);
+                element.X = resized.X; element.Y = resized.Y; element.Width = resized.Width; element.Height = resized.Height; ConstrainAttachment(element);
+                visual.Width = element.Width; visual.Height = element.Height; Canvas.SetLeft(visual, element.X); Canvas.SetTop(visual, element.Y); PositionAttachmentHandles(element);
+            };
+            thumb.DragCompleted += (_, _) =>
+            {
+                var end = (element.X, element.Y, element.Width, element.Height);
+                _history.Execute(new DelegateCommand(() => ApplyAttachmentBounds(element, end), () => ApplyAttachmentBounds(element, start))); _vm.Touch(); RestoreElements(); SelectObject(element);
+            };
+            ObjectCanvas.Children.Add(thumb);
+        }
+        PositionAttachmentHandles(element);
+    }
+    private void PositionAttachmentHandles(FileAttachmentElement element)
+    {
+        foreach (var thumb in ObjectCanvas.Children.OfType<Thumb>().Where(x => x.Tag is ValueTuple<FileAttachmentElement, ResizeHandle> value && ReferenceEquals(value.Item1, element)))
+        {
+            var handle = ((FileAttachmentElement, ResizeHandle))thumb.Tag;
+            var left = handle.Item2 switch { ResizeHandle.TopLeft or ResizeHandle.Left or ResizeHandle.BottomLeft => element.X - 5, ResizeHandle.Top or ResizeHandle.Bottom => element.X + element.Width / 2 - 5, _ => element.X + element.Width - 5 };
+            var top = handle.Item2 switch { ResizeHandle.TopLeft or ResizeHandle.Top or ResizeHandle.TopRight => element.Y - 5, ResizeHandle.Left or ResizeHandle.Right => element.Y + element.Height / 2 - 5, _ => element.Y + element.Height - 5 };
+            Canvas.SetLeft(thumb, left); Canvas.SetTop(thumb, top); Panel.SetZIndex(thumb, int.MaxValue);
+        }
+    }
+    private void ConstrainAttachment(FileAttachmentElement element)
+    {
+        var availableWidth = Math.Max(1, ObjectCanvas.ActualWidth); var availableHeight = Math.Max(1, ObjectCanvas.ActualHeight);
+        var minimumWidth = Math.Min(80, availableWidth); var minimumHeight = Math.Min(32, availableHeight);
+        element.X = Math.Clamp(element.X, 0, Math.Max(0, availableWidth - minimumWidth)); element.Y = Math.Clamp(element.Y, 0, Math.Max(0, availableHeight - minimumHeight));
+        element.Width = Math.Clamp(element.Width, minimumWidth, Math.Max(minimumWidth, availableWidth - element.X)); element.Height = Math.Clamp(element.Height, minimumHeight, Math.Max(minimumHeight, availableHeight - element.Y));
+    }
     private void SelectObject(NoteElement element)
     {
         _selectedElement = element; _selectedVisual = ObjectCanvas.Children.OfType<FrameworkElement>().FirstOrDefault(x => ReferenceEquals(x.Tag, element));
-        foreach (var thumb in ObjectCanvas.Children.OfType<Thumb>()) thumb.Visibility = thumb.Tag is ValueTuple<ImageElement, ResizeCorner> value && ReferenceEquals(value.Item1, element) ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var thumb in ObjectCanvas.Children.OfType<Thumb>()) thumb.Visibility = IsHandleForElement(thumb, element) ? Visibility.Visible : Visibility.Collapsed;
         if (_selectedVisual is not null) _selectedVisual.Opacity = .86;
     }
+    private static bool IsHandleForElement(Thumb thumb, NoteElement element) => thumb.Tag switch
+    {
+        ValueTuple<ImageElement, ResizeCorner> image => ReferenceEquals(image.Item1, element),
+        ValueTuple<FileAttachmentElement, ResizeHandle> attachment => ReferenceEquals(attachment.Item1, element),
+        _ => false
+    };
     private void ClearObjectSelection()
     {
         if (_selectedVisual is not null) _selectedVisual.Opacity = 1; _selectedVisual = null; _selectedElement = null; foreach (var thumb in ObjectCanvas.Children.OfType<Thumb>()) thumb.Visibility = Visibility.Collapsed;
@@ -408,6 +496,7 @@ public partial class NoteWindow : Window
     private static (double X, double Y) GetElementPosition(NoteElement element) => element switch { ImageElement image => (image.X, image.Y), FileAttachmentElement file => (file.X, file.Y), _ => (0, 0) };
     private static void SetElementPosition(NoteElement element, double x, double y) { if (element is ImageElement image) { image.X = x; image.Y = y; } else if (element is FileAttachmentElement file) { file.X = x; file.Y = y; } }
     private static void ApplyBounds(ImageElement element, (double X, double Y, double Width, double Height) value) { element.X = value.X; element.Y = value.Y; element.Width = value.Width; element.Height = value.Height; }
+    private static void ApplyAttachmentBounds(FileAttachmentElement element, (double X, double Y, double Width, double Height) value) { element.X = value.X; element.Y = value.Y; element.Width = value.Width; element.Height = value.Height; }
     private void ConstrainImage(ImageElement image)
     {
         var availableWidth = Math.Max(32, Surface.ActualWidth); var availableHeight = Math.Max(32, Surface.ActualHeight);

@@ -34,6 +34,7 @@ public sealed class AppController : IDisposable
     public void NewNote(NoteData? source = null)
     {
         var note = AppStateFactory.CreateNote(State.Settings, (source?.Left ?? 96) + 24, (source?.Top ?? 96) + 24);
+        PlaceNewNoteFullyVisible(note, source);
         State.Notes.Add(note); Show(note); ScheduleSave();
     }
     public void Show(NoteData note)
@@ -94,6 +95,15 @@ public sealed class AppController : IDisposable
         var screen = Screen.AllScreens.OrderByDescending(s => System.Drawing.Rectangle.Intersect(s.WorkingArea, proposed).Width * System.Drawing.Rectangle.Intersect(s.WorkingArea, proposed).Height).FirstOrDefault() ?? Screen.PrimaryScreen;
         if (screen is null) return; var area = screen.WorkingArea;
         var clamped = NaraNote.Core.Utilities.WindowPlacement.Clamp(new(note.Left, note.Top, note.Width, note.Height), new(area.X, area.Y, area.Width, area.Height));
+        note.Left = clamped.X; note.Top = clamped.Y; note.Width = clamped.Width; note.Height = clamped.Height;
+    }
+    private static void PlaceNewNoteFullyVisible(NoteData note, NoteData? source)
+    {
+        var point = source is null
+            ? System.Windows.Forms.Cursor.Position
+            : new System.Drawing.Point((int)(source.Left + source.Width / 2), (int)(source.Top + source.Height / 2));
+        var screen = Screen.FromPoint(point); var area = screen.WorkingArea;
+        var clamped = NaraNote.Core.Utilities.WindowPlacement.ClampFullyVisible(new(note.Left, note.Top, note.Width, note.Height), new(area.X, area.Y, area.Width, area.Height));
         note.Left = clamped.X; note.Top = clamped.Y; note.Width = clamped.Width; note.Height = clamped.Height;
     }
     private void SetupHotKeys()

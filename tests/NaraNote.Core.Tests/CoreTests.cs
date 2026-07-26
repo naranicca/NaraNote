@@ -33,10 +33,35 @@ public sealed class CoreTests
     [Fact] public void Resize_enforces_minimum() => Assert.Equal(32, ImageSizing.Resize(0, 0, 100, 50, -500, 0, ResizeCorner.BottomRight).Width);
     [Fact] public void Initial_image_fits_surface() { var x = ImageSizing.Initial(2000, 1000, 300, 200); Assert.Equal(300, x.Width); Assert.Equal(150, x.Height); }
 
+    [Fact]
+    public void Attachment_resize_is_free_and_keeps_opposite_anchor()
+    {
+        var right = ObjectSizing.ResizeFree(20, 30, 160, 44, 40, 20, ResizeHandle.BottomRight);
+        Assert.Equal((20d, 30d, 200d, 64d), right);
+        var topLeft = ObjectSizing.ResizeFree(20, 30, 160, 44, 30, 10, ResizeHandle.TopLeft);
+        Assert.Equal(180, topLeft.X + topLeft.Width, 8); Assert.Equal(74, topLeft.Y + topLeft.Height, 8);
+    }
+
+    [Fact]
+    public void Attachment_edge_handle_changes_only_one_dimension()
+    {
+        var resized = ObjectSizing.ResizeFree(20, 30, 160, 44, 50, 99, ResizeHandle.Right);
+        Assert.Equal(210, resized.Width); Assert.Equal(44, resized.Height); Assert.Equal(30, resized.Y);
+    }
+
     [Fact] public void Window_is_clamped_in_negative_monitor()
     {
         var r = WindowPlacement.Clamp(new(2000, 2000, 360, 320), new(-1920, 0, 1920, 1080));
         Assert.True(r.X <= -48); Assert.True(r.Y < 1080);
+    }
+
+    [Fact]
+    public void New_window_is_fully_visible_in_work_area()
+    {
+        var r = WindowPlacement.ClampFullyVisible(new(1850, 1000, 360, 320), new(0, 0, 1920, 1080));
+        Assert.True(r.X >= 0 && r.Y >= 0); Assert.True(r.X + r.Width <= 1920); Assert.True(r.Y + r.Height <= 1080);
+        var negative = WindowPlacement.ClampFullyVisible(new(-2200, -200, 360, 320), new(-1920, 0, 1920, 1080));
+        Assert.True(negative.X >= -1920); Assert.True(negative.X + negative.Width <= 0); Assert.True(negative.Y >= 0);
     }
 
     [Fact] public void Contrast_handles_dark_and_light() { Assert.True(ColorContrast.UseLightForeground("#111111")); Assert.False(ColorContrast.UseLightForeground("#FFFFFF")); }

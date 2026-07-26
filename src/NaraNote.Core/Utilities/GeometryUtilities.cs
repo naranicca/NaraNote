@@ -3,6 +3,7 @@ using NaraNote.Core.Models;
 namespace NaraNote.Core.Utilities;
 
 public enum ResizeCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+public enum ResizeHandle { TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left }
 
 public static class ImageSizing
 {
@@ -26,6 +27,26 @@ public static class ImageSizing
     }
 }
 
+public static class ObjectSizing
+{
+    public static (double X, double Y, double Width, double Height) ResizeFree(
+        double x, double y, double width, double height, double deltaX, double deltaY,
+        ResizeHandle handle, double minimumWidth = 80, double minimumHeight = 32)
+    {
+        var right = x + width;
+        var bottom = y + height;
+        var resizeLeft = handle is ResizeHandle.TopLeft or ResizeHandle.Left or ResizeHandle.BottomLeft;
+        var resizeRight = handle is ResizeHandle.TopRight or ResizeHandle.Right or ResizeHandle.BottomRight;
+        var resizeTop = handle is ResizeHandle.TopLeft or ResizeHandle.Top or ResizeHandle.TopRight;
+        var resizeBottom = handle is ResizeHandle.BottomLeft or ResizeHandle.Bottom or ResizeHandle.BottomRight;
+        if (resizeLeft) { x = Math.Min(x + deltaX, right - minimumWidth); width = right - x; }
+        else if (resizeRight) width = Math.Max(minimumWidth, width + deltaX);
+        if (resizeTop) { y = Math.Min(y + deltaY, bottom - minimumHeight); height = bottom - y; }
+        else if (resizeBottom) height = Math.Max(minimumHeight, height + deltaY);
+        return (x, y, width, height);
+    }
+}
+
 public static class WindowPlacement
 {
     public static RectData Clamp(RectData window, RectData workArea, double minimumVisible = 48)
@@ -34,6 +55,15 @@ public static class WindowPlacement
         var height = Math.Clamp(window.Height, 160, workArea.Height);
         var x = Math.Clamp(window.X, workArea.X - width + minimumVisible, workArea.X + workArea.Width - minimumVisible);
         var y = Math.Clamp(window.Y, workArea.Y, workArea.Y + workArea.Height - minimumVisible);
+        return new(x, y, width, height);
+    }
+
+    public static RectData ClampFullyVisible(RectData window, RectData workArea)
+    {
+        var width = Math.Clamp(window.Width, Math.Min(220, workArea.Width), workArea.Width);
+        var height = Math.Clamp(window.Height, Math.Min(160, workArea.Height), workArea.Height);
+        var x = Math.Clamp(window.X, workArea.X, workArea.X + workArea.Width - width);
+        var y = Math.Clamp(window.Y, workArea.Y, workArea.Y + workArea.Height - height);
         return new(x, y, width, height);
     }
 }
