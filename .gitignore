@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+.dotnet/
+.dotnet-install.ps1
+TestResults/
+publish/
+release/
+release-locked-*/
+.agents/
+*.user

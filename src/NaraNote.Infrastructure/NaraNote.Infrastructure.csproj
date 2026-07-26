@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="..\NaraNote.Core\NaraNote.Core.csproj" /></ItemGroup>
+</Project>
