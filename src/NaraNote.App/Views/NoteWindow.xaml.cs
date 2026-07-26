@@ -59,6 +59,7 @@ public partial class NoteWindow : Window
         PreviewMouseLeftButtonDown += Resize_MouseLeftButtonDown;
         PreviewMouseMove += Resize_MouseMove;
         PreviewMouseLeftButtonUp += Resize_MouseLeftButtonUp;
+        Surface.PreviewMouseLeftButtonDown += Surface_PreviewMouseLeftButtonDown;
         MouseLeave += (_, _) => { if (_resizeEdge == 0) Mouse.OverrideCursor = null; };
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
@@ -82,6 +83,9 @@ public partial class NoteWindow : Window
         var settings = _controller.State.Settings;
         try { Ink.DefaultDrawingAttributes.Color = (Color)ColorConverter.ConvertFromString(settings.DefaultPenColor); }
         catch (FormatException) { Ink.DefaultDrawingAttributes.Color = Color.FromRgb(34, 34, 34); }
+        Ink.DefaultDrawingAttributes.IgnorePressure = false;
+        Ink.DefaultDrawingAttributes.FitToCurve = true;
+        Ink.DefaultDrawingAttributes.StylusTip = StylusTip.Ellipse;
         SetPenThickness(Math.Clamp(settings.DefaultPenThickness, 1d, 10d), false);
     }
     private void ApplyAppearance()
@@ -356,7 +360,8 @@ public partial class NoteWindow : Window
     {
         foreach (var corner in Enum.GetValues<ResizeCorner>())
         {
-            var thumb = new Thumb { Width = 10, Height = 10, Background = Brushes.White, BorderBrush = Brushes.DodgerBlue, BorderThickness = new Thickness(1), Tag = (element, corner), Visibility = ReferenceEquals(_selectedElement, element) ? Visibility.Visible : Visibility.Collapsed };
+            var resizeCursor = corner is ResizeCorner.TopLeft or ResizeCorner.BottomRight ? Cursors.SizeNWSE : Cursors.SizeNESW;
+            var thumb = new Thumb { Width = 10, Height = 10, Background = Brushes.White, BorderBrush = Brushes.DodgerBlue, BorderThickness = new Thickness(1), Cursor = resizeCursor, Tag = (element, corner), Visibility = ReferenceEquals(_selectedElement, element) ? Visibility.Visible : Visibility.Collapsed };
             (double X, double Y, double Width, double Height) start = default;
             thumb.DragStarted += (_, _) => start = (element.X, element.Y, element.Width, element.Height);
             thumb.DragDelta += (_, e) =>
@@ -390,6 +395,16 @@ public partial class NoteWindow : Window
     {
         if (_selectedVisual is not null) _selectedVisual.Opacity = 1; _selectedVisual = null; _selectedElement = null; foreach (var thumb in ObjectCanvas.Children.OfType<Thumb>()) thumb.Visibility = Visibility.Collapsed;
     }
+    private void Surface_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_selectedElement is null || e.OriginalSource is not DependencyObject source) return;
+        for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is Thumb || current is FrameworkElement { Tag: NoteElement }) return;
+            if (ReferenceEquals(current, Surface)) break;
+        }
+        ClearObjectSelection();
+    }
     private static (double X, double Y) GetElementPosition(NoteElement element) => element switch { ImageElement image => (image.X, image.Y), FileAttachmentElement file => (file.X, file.Y), _ => (0, 0) };
     private static void SetElementPosition(NoteElement element, double x, double y) { if (element is ImageElement image) { image.X = x; image.Y = y; } else if (element is FileAttachmentElement file) { file.X = x; file.Y = y; } }
     private static void ApplyBounds(ImageElement element, (double X, double Y, double Width, double Height) value) { element.X = value.X; element.Y = value.Y; element.Width = value.Width; element.Height = value.Height; }
@@ -403,7 +418,7 @@ public partial class NoteWindow : Window
     private void RestoreElements() { var selected = _selectedElement; ObjectCanvas.Children.Clear(); _selectedVisual = null; foreach (var e in _note.Elements.OrderBy(x => x.ZIndex)) { if (e is ImageElement i) RenderImage(i); else if (e is FileAttachmentElement f) RenderAttachment(f); } if (selected is not null && _note.Elements.Contains(selected)) SelectObject(selected); }
     private void RestoreInk()
     {
-        Ink.Strokes.Clear(); foreach (var data in _note.Elements.OfType<InkStrokeElement>()) { var points = new StylusPointCollection(data.Points.Select(p => new StylusPoint(p.X, p.Y, p.Pressure))); var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = (Color)ColorConverter.ConvertFromString(data.Color), Width = data.Thickness, Height = data.Thickness } }; Ink.Strokes.Add(stroke); }
+        Ink.Strokes.Clear(); foreach (var data in _note.Elements.OfType<InkStrokeElement>()) { var points = new StylusPointCollection(data.Points.Select(p => new StylusPoint(p.X, p.Y, p.Pressure))); var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = (Color)ColorConverter.ConvertFromString(data.Color), Width = data.Thickness, Height = data.Thickness, IgnorePressure = false, FitToCurve = true, StylusTip = StylusTip.Ellipse } }; Ink.Strokes.Add(stroke); }
     }
     private void PersistInk() { _note.Elements.RemoveAll(x => x is InkStrokeElement); foreach (var s in Ink.Strokes) _note.Elements.Add(new InkStrokeElement { Color = s.DrawingAttributes.Color.ToString(), Thickness = s.DrawingAttributes.Width, Points = s.StylusPoints.Select(p => new InkPointData(p.X, p.Y, p.PressureFactor)).ToList() }); }
     private void Ink_StrokeCollected(object sender, InkCanvasStrokeCollectedEventArgs e)
