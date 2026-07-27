@@ -50,6 +50,8 @@ public partial class NoteWindow : Window
     private System.Drawing.Point _resizeStartCursor;
     private Rect _resizeStartBounds;
     private bool _inkInputActive;
+    private bool _suppressAutoPenUntilStylusLeaves;
+    private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
     public NoteWindow(NoteData note, AppController controller)
     {
@@ -68,6 +70,11 @@ public partial class NoteWindow : Window
         Ink.PreviewMouseLeftButtonDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
         Ink.PreviewMouseMove += (_, e) => { if (_inkInputActive && e.LeftButton == MouseButtonState.Pressed) AutoExpandForInk(e.GetPosition(Ink)); };
         Ink.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
+        Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
+        Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
+        Surface.PreviewStylusMove += Surface_PreviewStylusForAutoPen;
+        Surface.PreviewStylusDown += Surface_PreviewStylusForAutoPen;
+        Surface.StylusLeave += (_, _) => _suppressAutoPenUntilStylusLeaves = false;
         MouseLeave += (_, _) => { if (_resizeEdge == 0) Mouse.OverrideCursor = null; };
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
@@ -76,6 +83,8 @@ public partial class NoteWindow : Window
         SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; _vm.Touch(); };
         Activated += (_, _) => _note.LastModifiedUtc = DateTimeOffset.UtcNow;
         PreviewKeyDown += Window_PreviewKeyDown;
+        PreviewKeyUp += Window_PreviewKeyUp;
+        Deactivated += (_, _) => ResetShiftLineMode();
         _loading = false;
     }
     public void FocusEditor()
@@ -204,6 +213,7 @@ public partial class NoteWindow : Window
     }
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Add || e.Key == Key.OemPlus)) { ChangePenThickness(1); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { ChangePenThickness(-1); e.Handled = true; }
@@ -219,9 +229,15 @@ public partial class NoteWindow : Window
         else if (e.Key == Key.Escape && Ink.EditingMode != InkCanvasEditingMode.None)
         {
             Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; _inkInputActive = false;
+            _suppressAutoPenUntilStylusLeaves = true;
+            ResetShiftLineMode();
             ClearObjectSelection(); Editor.Focus(); Keyboard.Focus(Editor); e.Handled = true;
         }
         else if (e.Key == Key.Escape) ClearObjectSelection();
+    }
+    private void Window_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key is Key.LeftShift or Key.RightShift) ResetShiftLineMode();
     }
     private void ChangePenThickness(int direction)
     {
@@ -254,6 +270,40 @@ public partial class NoteWindow : Window
         _lastInkAutoExpandUtc = now;
         if (expandWidth) Width = Math.Min(maximumDimension, Width + expansion);
         if (expandHeight) Height = Math.Min(maximumDimension, Height + expansion);
+    }
+    private void Surface_PreviewStylusForAutoPen(object sender, StylusEventArgs e)
+    {
+        if (_suppressAutoPenUntilStylusLeaves || Ink.EditingMode != InkCanvasEditingMode.None) return;
+        if (e.StylusDevice.TabletDevice.Type != TabletDeviceType.Stylus) return;
+        Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink;
+    }
+    private void Ink_PreviewMouseDownForStraightLine(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || Ink.EditingMode != InkCanvasEditingMode.Ink || !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+        e.Handled = true; _inkInputActive = false; UpdateShiftLineCursor();
+        var current = e.GetPosition(Ink);
+        if (_shiftLineAnchor is { } start && (current - start).Length >= 1) AddStraightInkLine(start, current);
+        _shiftLineAnchor = current;
+    }
+    private void AddStraightInkLine(System.Windows.Point start, System.Windows.Point end)
+    {
+        var now = Environment.TickCount64;
+        var points = new List<InkPointData> { new(start.X, start.Y, .5f, now), new(end.X, end.Y, .5f, now + 1) };
+        var attributes = Ink.DefaultDrawingAttributes.Clone(); attributes.FitToCurve = false;
+        var stroke = new Stroke(new StylusPointCollection(points.Select(point => new StylusPoint(point.X, point.Y, point.Pressure)))) { DrawingAttributes = attributes };
+        var added = new InkStrokeElement { Points = points, Color = attributes.Color.ToString(), Thickness = attributes.Width };
+        Ink.Strokes.Add(stroke); _history.Execute(new DelegateCommand(() => { if (!_note.Elements.Contains(added)) _note.Elements.Add(added); }, () => _note.Elements.Remove(added))); _vm.Touch();
+    }
+    private void UpdateShiftLineCursor()
+    {
+        var active = Ink.EditingMode == InkCanvasEditingMode.Ink && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        Ink.UseCustomCursor = active;
+        if (active) Ink.Cursor = Cursors.Cross;
+        else _shiftLineAnchor = null;
+    }
+    private void ResetShiftLineMode()
+    {
+        _shiftLineAnchor = null; Ink.UseCustomCursor = false;
     }
     private bool TryPasteRich()
     {
@@ -543,9 +593,9 @@ public partial class NoteWindow : Window
             erase.IsChecked = Ink.EditingMode == InkCanvasEditingMode.EraseByStroke;
             erase.Visibility = hasInk ? Visibility.Visible : Visibility.Collapsed;
         }
-        select.Click += (_, _) => { Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; Editor.Focus(); UpdateToolModeMenu(); };
-        pen.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink; UpdateToolModeMenu(); };
-        erase.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke; UpdateToolModeMenu(); };
+        select.Click += (_, _) => { Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; _inkInputActive = false; _suppressAutoPenUntilStylusLeaves = true; ResetShiftLineMode(); Editor.Focus(); UpdateToolModeMenu(); };
+        pen.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink; UpdateShiftLineCursor(); UpdateToolModeMenu(); };
+        erase.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke; ResetShiftLineMode(); UpdateToolModeMenu(); };
         menu.Opened += (_, _) => UpdateToolModeMenu();
         menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu); AddNoteColorMenu(menu); Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
     }
