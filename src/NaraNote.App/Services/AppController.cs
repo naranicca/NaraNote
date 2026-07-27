@@ -81,7 +81,7 @@ public sealed class AppController : IDisposable
         menu.Items.Add("종료", null, (_, _) => Application.Current.Dispatcher.Invoke(Exit));
         _appIcon ??= LoadAppIcon();
         _tray = new NotifyIcon { Icon = _appIcon, Text = "NaraNote", Visible = true, ContextMenuStrip = menu };
-        _tray.DoubleClick += (_, _) => Application.Current.Dispatcher.Invoke(() => { var n = State.Notes.Where(x => x.IsOpen).OrderByDescending(x => x.LastModifiedUtc).FirstOrDefault(); if (n is not null) Show(n); });
+        _tray.DoubleClick += (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote());
     }
     private static System.Drawing.Icon LoadAppIcon()
     {
