@@ -55,6 +55,9 @@ public partial class NoteWindow : Window
     private System.Windows.Point _stylusResizeStartScreen;
     private Rect _resizeStartBounds;
     private bool _inkInputActive;
+    private bool _autoPenInputActive;
+    private StylusPointCollection? _autoPenPoints;
+    private DrawingAttributes? _autoPenAttributes;
     private bool _suppressAutoPenUntilStylusLeaves;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
@@ -85,6 +88,7 @@ public partial class NoteWindow : Window
         Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
         Surface.PreviewStylusMove += Surface_PreviewStylusForAutoPen;
         Surface.PreviewStylusDown += Surface_PreviewStylusForAutoPen;
+        Surface.PreviewStylusUp += Surface_PreviewStylusForAutoPen;
         Surface.StylusLeave += (_, _) => _suppressAutoPenUntilStylusLeaves = false;
         MouseLeave += (_, _) => { if (_resizeEdge == 0) Mouse.OverrideCursor = null; };
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
@@ -318,9 +322,51 @@ public partial class NoteWindow : Window
     }
     private void Surface_PreviewStylusForAutoPen(object sender, StylusEventArgs e)
     {
-        if (_suppressAutoPenUntilStylusLeaves || Ink.EditingMode != InkCanvasEditingMode.None) return;
         if (e.StylusDevice.TabletDevice.Type != TabletDeviceType.Stylus) return;
+        if (_autoPenInputActive)
+        {
+            AppendAutoPenPoints(e.GetStylusPoints(Ink));
+            if (e.RoutedEvent == Stylus.PreviewStylusMoveEvent) AutoExpandForInk(e.GetPosition(Ink));
+            if (e.RoutedEvent == Stylus.PreviewStylusUpEvent) CompleteAutoPenStroke();
+            e.Handled = true;
+            return;
+        }
+        if (_suppressAutoPenUntilStylusLeaves || Ink.EditingMode != InkCanvasEditingMode.None) return;
         Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink;
+        if (e.RoutedEvent != Stylus.PreviewStylusDownEvent) return;
+        _autoPenInputActive = true;
+        _autoPenPoints = new StylusPointCollection();
+        _autoPenAttributes = Ink.DefaultDrawingAttributes.Clone();
+        AppendAutoPenPoints(e.GetStylusPoints(Ink));
+        Stylus.Capture(Surface, CaptureMode.SubTree);
+        e.Handled = true;
+    }
+    private void AppendAutoPenPoints(StylusPointCollection points)
+    {
+        if (_autoPenPoints is null) return;
+        foreach (var point in points)
+        {
+            if (_autoPenPoints.Count > 0 && (point.ToPoint() - _autoPenPoints[^1].ToPoint()).LengthSquared < .01) continue;
+            _autoPenPoints.Add(point);
+        }
+    }
+    private void CompleteAutoPenStroke()
+    {
+        var points = _autoPenPoints;
+        var attributes = _autoPenAttributes;
+        _autoPenInputActive = false;
+        _autoPenPoints = null;
+        _autoPenAttributes = null;
+        if (ReferenceEquals(Stylus.Captured, Surface)) Stylus.Capture(null);
+        if (points is null || points.Count == 0 || attributes is null) return;
+        if (points.Count == 1)
+        {
+            var point = points[0];
+            points.Add(new StylusPoint(point.X + .1, point.Y + .1, point.PressureFactor));
+        }
+        var stroke = new Stroke(points) { DrawingAttributes = attributes };
+        Ink.Strokes.Add(stroke);
+        ProcessInkStroke(stroke);
     }
     private void Ink_PreviewMouseDownForStraightLine(object sender, MouseButtonEventArgs e)
     {
@@ -637,17 +683,19 @@ public partial class NoteWindow : Window
     }
     private void PersistInk() { _note.Elements.RemoveAll(x => x is InkStrokeElement); foreach (var s in Ink.Strokes) _note.Elements.Add(new InkStrokeElement { Color = s.DrawingAttributes.Color.ToString(), Thickness = s.DrawingAttributes.Width, Points = s.StylusPoints.Select(p => new InkPointData(p.X, p.Y, p.PressureFactor)).ToList() }); }
     private void Ink_StrokeCollected(object sender, InkCanvasStrokeCollectedEventArgs e)
+        => ProcessInkStroke(e.Stroke);
+    private void ProcessInkStroke(Stroke stroke)
     {
-        var now = Environment.TickCount64; var pts = e.Stroke.StylusPoints.Select((p, i) => new InkPointData(p.X, p.Y, p.PressureFactor, now - (e.Stroke.StylusPoints.Count - i) * 8)).ToList();
+        var now = Environment.TickCount64; var pts = stroke.StylusPoints.Select((p, i) => new InkPointData(p.X, p.Y, p.PressureFactor, now - (stroke.StylusPoints.Count - i) * 8)).ToList();
         var existing = _note.Elements.OfType<InkStrokeElement>().ToList(); var result = _scribble.Analyze(pts, existing);
         if (result.IsScribble && result.TargetStrokeIds.Count > 0)
         {
-            Ink.Strokes.Remove(e.Stroke); var removed = existing.Where(x => result.TargetStrokeIds.Contains(x.Id)).ToList();
+            Ink.Strokes.Remove(stroke); var removed = existing.Where(x => result.TargetStrokeIds.Contains(x.Id)).ToList();
             _history.Execute(new DelegateCommand(() => _note.Elements.RemoveAll(x => removed.Contains(x)), () => _note.Elements.AddRange(removed))); RestoreInk();
         }
         else
         {
-            var added = new InkStrokeElement { Points = pts, Color = e.Stroke.DrawingAttributes.Color.ToString(), Thickness = e.Stroke.DrawingAttributes.Width };
+            var added = new InkStrokeElement { Points = pts, Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width };
             _history.Execute(new DelegateCommand(() => { if (!_note.Elements.Contains(added)) _note.Elements.Add(added); }, () => _note.Elements.Remove(added)));
         }
         _vm.Touch();

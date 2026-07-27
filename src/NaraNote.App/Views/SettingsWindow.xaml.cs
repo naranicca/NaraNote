@@ -29,7 +29,10 @@ public partial class SettingsWindow : Window
         PenThicknessSlider.Value = Math.Clamp(settings.DefaultPenThickness, 1d, 10d);
         PenThicknessTextBox.Text = PenThicknessSlider.Value.ToString("0.#", CultureInfo.CurrentCulture);
         SizeBox.Text = note.FontSize.ToString("0.#", CultureInfo.CurrentCulture); TrayBox.IsChecked = settings.UseSystemTray; StartupBox.IsChecked = settings.RunAtStartup;
+        NewNoteHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseNewNoteHotKey;
+        ToggleNotesHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseToggleNotesHotKey;
         NewNoteHotKey.Text = settings.GlobalHotKeys.GetValueOrDefault("NewNote", "Ctrl+Alt+N"); ToggleHotKey.Text = settings.GlobalHotKeys.GetValueOrDefault("ToggleNotes", "Ctrl+Alt+H");
+        UpdateGlobalHotKeyEditors();
         foreach (var color in Palette)
         {
             var button = new Button { Width = 38, Height = 30, Margin = new Thickness(2), Padding = new Thickness(0), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)), ToolTip = color, Style = (Style)FindResource("ColorPresetButtonStyle") };
@@ -52,7 +55,7 @@ public partial class SettingsWindow : Window
         {
             var selected = string.Equals(pair.Value, _penColor, StringComparison.OrdinalIgnoreCase);
             pair.Key.BorderThickness = new Thickness(selected ? 3 : 1);
-            pair.Key.BorderBrush = selected ? new SolidColorBrush(Color.FromRgb(45, 45, 45)) : new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
+            pair.Key.BorderBrush = selected ? new SolidColorBrush(System.Windows.Media.Colors.DodgerBlue) : new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
         }
     }
     private void PenThicknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -85,12 +88,19 @@ public partial class SettingsWindow : Window
         {
             var selected = string.Equals(pair.Value, _color, StringComparison.OrdinalIgnoreCase);
             pair.Key.BorderThickness = new Thickness(selected ? 3 : 1);
-            pair.Key.BorderBrush = selected ? new SolidColorBrush(Color.FromRgb(45, 45, 45)) : new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
+            pair.Key.BorderBrush = selected ? new SolidColorBrush(System.Windows.Media.Colors.DodgerBlue) : new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
         }
+    }
+    private void HotKeyEnabledBox_Changed(object sender, RoutedEventArgs e) => UpdateGlobalHotKeyEditors();
+    private void UpdateGlobalHotKeyEditors()
+    {
+        if (NewNoteHotKey is null || ToggleHotKey is null) return;
+        NewNoteHotKey.IsEnabled = NewNoteHotKeyEnabledBox.IsChecked == true;
+        ToggleHotKey.IsEnabled = ToggleNotesHotKeyEnabledBox.IsChecked == true;
     }
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        if (!NaraNote.Core.Utilities.HotKeyDefinition.TryParse(NewNoteHotKey.Text, out _) || !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(ToggleHotKey.Text, out _)) { System.Windows.MessageBox.Show("단축키는 Ctrl+Alt+N과 같은 형식으로 입력해 주세요."); return; }
+        if ((NewNoteHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(NewNoteHotKey.Text, out _)) || (ToggleNotesHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(ToggleHotKey.Text, out _))) { System.Windows.MessageBox.Show("단축키는 Ctrl+Alt+N과 같은 형식으로 입력해 주세요."); return; }
         if (!TryApplyPenThicknessInput(true)) return;
         var selectedFont = FontBox.SelectedItem is FontFamily family ? family.Source : FontBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(selectedFont) || !Fonts.SystemFontFamilies.Any(x => string.Equals(x.Source, selectedFont, StringComparison.OrdinalIgnoreCase))) selectedFont = "Segoe UI";
@@ -99,6 +109,9 @@ public partial class SettingsWindow : Window
         _settings.DefaultFontFamily = selectedFont; _settings.DefaultFontSize = selectedSize;
         _settings.DefaultPenColor = _penColor;
         _settings.DefaultPenThickness = PenThicknessSlider.Value;
+        _settings.UseGlobalHotKeys = true;
+        _settings.UseNewNoteHotKey = NewNoteHotKeyEnabledBox.IsChecked == true;
+        _settings.UseToggleNotesHotKey = ToggleNotesHotKeyEnabledBox.IsChecked == true;
         _settings.UseSystemTray = TrayBox.IsChecked == true; _settings.RunAtStartup = StartupBox.IsChecked == true;
         _settings.GlobalHotKeys["NewNote"] = NewNoteHotKey.Text; _settings.GlobalHotKeys["ToggleNotes"] = ToggleHotKey.Text; DialogResult = true;
     }

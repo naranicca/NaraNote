@@ -108,11 +108,27 @@ public sealed class AppController : IDisposable
     }
     private void SetupHotKeys()
     {
+        var useNewNote = State.Settings.UseGlobalHotKeys && State.Settings.UseNewNoteHotKey;
+        var useToggleNotes = State.Settings.UseGlobalHotKeys && State.Settings.UseToggleNotesHotKey;
+        if (!useNewNote && !useToggleNotes)
+        {
+            _hotKeys?.Dispose();
+            _hotKeys = null;
+            return;
+        }
         _hotKeys ??= new GlobalHotKeyManager();
         var newNote = State.Settings.GlobalHotKeys.GetValueOrDefault("NewNote", "Ctrl+Alt+N");
         var toggle = State.Settings.GlobalHotKeys.GetValueOrDefault("ToggleNotes", "Ctrl+Alt+H");
-        if (!_hotKeys.Register(100, newNote, () => Application.Current.Dispatcher.Invoke(() => NewNote()))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {newNote}."));
-        if (!_hotKeys.Register(101, toggle, () => Application.Current.Dispatcher.Invoke(() => { _allVisible = !_allVisible; ToggleAll(_allVisible); }))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {toggle}."));
+        if (useNewNote)
+        {
+            if (!_hotKeys.Register(100, newNote, () => Application.Current.Dispatcher.Invoke(() => NewNote()))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {newNote}."));
+        }
+        else _hotKeys.Unregister(100);
+        if (useToggleNotes)
+        {
+            if (!_hotKeys.Register(101, toggle, () => Application.Current.Dispatcher.Invoke(() => { _allVisible = !_allVisible; ToggleAll(_allVisible); }))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {toggle}."));
+        }
+        else _hotKeys.Unregister(101);
     }
     public void Dispose() { _hotKeys?.Dispose(); _tray?.Dispose(); _appIcon?.Dispose(); _debounce?.Dispose(); _saveGate.Dispose(); }
 }

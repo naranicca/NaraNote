@@ -18,6 +18,9 @@ public sealed class AppSettings
     public string DefaultColor { get; set; } = DefaultNoteColor;
     public string DefaultPenColor { get; set; } = "#FF222222";
     public double DefaultPenThickness { get; set; } = 3.5;
+    public bool UseGlobalHotKeys { get; set; } = true;
+    public bool UseNewNoteHotKey { get; set; } = true;
+    public bool UseToggleNotesHotKey { get; set; } = true;
     public bool UseSystemTray { get; set; } = true;
     public bool RunAtStartup { get; set; }
     public Dictionary<string, string> GlobalHotKeys { get; set; } = new()
