@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Ink;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
 using NaraNote.App.Services;
 using NaraNote.App.ViewModels;
 using NaraNote.Core.Commands;
@@ -37,6 +38,9 @@ namespace NaraNote.App.Views;
 public partial class NoteWindow : Window
 {
     private const int WmNcHitTest = 0x0084, Grip = 16;
+    private const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34;
+    private const int DwmWindowCornerPreferenceRound = 2;
+    private const uint DwmColorNone = 0xFFFFFFFE;
     private const double DefaultPenThickness = 3.5;
     private static readonly double[] PenThicknessSteps = [1d, 2d, DefaultPenThickness, 6d, 10d];
     private readonly NoteData _note; private readonly AppController _controller; private readonly NoteViewModel _vm;
@@ -57,6 +61,7 @@ public partial class NoteWindow : Window
     public NoteWindow(NoteData note, AppController controller)
     {
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
+        SourceInitialized += (_, _) => EnableNativeWindowAppearance();
         _vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(NoteViewModel.Color)) ApplyAppearance(); };
         Left = note.Left; Top = note.Top; Width = note.Width; Height = note.Height; Topmost = note.IsAlwaysOnTop;
         ApplyPenSettings();
@@ -113,8 +118,12 @@ public partial class NoteWindow : Window
     }
     private void ApplyAppearance()
     {
-        Background = Brushes.Transparent;
-        try { Frame.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_note.Color)); } catch (FormatException) { Frame.Background = Brushes.LightYellow; }
+        try
+        {
+            var background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(_note.Color));
+            Frame.Background = background; Background = background;
+        }
+        catch (FormatException) { Frame.Background = Brushes.LightYellow; Background = Brushes.LightYellow; }
         var foreground = ColorContrast.UseLightForeground(_note.Color) ? Brushes.White : Brushes.Black;
         var headerForeground = ColorContrast.UseLightForeground(_note.Color)
             ? new SolidColorBrush(Color.FromArgb(210, 255, 255, 255))
@@ -717,6 +726,27 @@ public partial class NoteWindow : Window
         widths.SubmenuOpened += (_, _) => { foreach (MenuItem item in widths.Items) item.IsChecked = item.Tag is double value && Math.Abs(Ink.DefaultDrawingAttributes.Width - value) < .01; };
         menu.Items.Add(new Separator()); menu.Items.Add(colors); menu.Items.Add(widths);
     }
+    private void EnableNativeWindowAppearance()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        var margins = new DwmMargins();
+        _ = DwmExtendFrameIntoClientArea(hwnd, ref margins);
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)) return;
+        var cornerPreference = DwmWindowCornerPreferenceRound;
+        _ = DwmSetWindowAttribute(hwnd, DwmwaWindowCornerPreference, ref cornerPreference, sizeof(int));
+        var borderColor = DwmColorNone;
+        _ = DwmSetWindowAttribute(hwnd, DwmwaBorderColor, ref borderColor, sizeof(uint));
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DwmMargins { public int Left, Right, Top, Bottom; }
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref DwmMargins margins);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int valueSize);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref uint value, int valueSize);
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg != WmNcHitTest) return IntPtr.Zero; var point = PointFromLParam(lParam); var local = PointFromScreen(point); const double g = Grip;
