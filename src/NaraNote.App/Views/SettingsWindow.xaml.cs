@@ -17,7 +17,7 @@ public partial class SettingsWindow : Window
     private readonly NoteViewModel _note; private readonly AppSettings _settings; private string _color; private string _penColor;
     private readonly Dictionary<Button, string> _colorButtons = [];
     private readonly Dictionary<Button, string> _penColorButtons = [];
-    private static readonly string[] Palette = ["#FFFF88", "#FFCFF09E", "#FFBDEBFF", "#FFFFC4D8", "#FFFFC27A", "#FFDCC6FF", "#FFF3F3F3"];
+    private static readonly string[] Palette = [AppSettings.DefaultNoteColor, "#FFCFF09E", "#FFBDEBFF", "#FFFFC4D8", "#FFFFC27A", "#FFDCC6FF", "#FFF3F3F3"];
     private static readonly (string Name, string Value)[] PenPalette = [("검정", "#FF000000"), ("진회색", "#FF2F4F4F"), ("빨강", "#FFFF0000"), ("파랑", "#FF0000FF"), ("초록", "#FF008000"), ("주황", "#FFFFA500"), ("보라", "#FF800080")];
     public SettingsWindow(NoteViewModel note, AppSettings settings)
     {

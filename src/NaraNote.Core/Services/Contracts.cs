@@ -14,6 +14,8 @@ public static class AppStateFactory
     {
         state ??= new AppState();
         state.Settings ??= new AppSettings();
+        if (string.Equals(state.Settings.DefaultColor, AppSettings.LegacyDefaultNoteColor, StringComparison.OrdinalIgnoreCase))
+            state.Settings.DefaultColor = AppSettings.DefaultNoteColor;
         state.Notes ??= [];
         if (state.Notes.Count == 0) state.Notes.Add(CreateNote(state.Settings));
         return state;

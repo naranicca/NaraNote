@@ -11,9 +11,11 @@ public sealed class AppState
 
 public sealed class AppSettings
 {
+    public const string DefaultNoteColor = "#FFF3A6";
+    public const string LegacyDefaultNoteColor = "#FFFF88";
     public string DefaultFontFamily { get; set; } = "Segoe UI";
     public double DefaultFontSize { get; set; } = 16;
-    public string DefaultColor { get; set; } = "#FFFF88";
+    public string DefaultColor { get; set; } = DefaultNoteColor;
     public string DefaultPenColor { get; set; } = "#FF222222";
     public double DefaultPenThickness { get; set; } = 3.5;
     public bool UseSystemTray { get; set; } = true;
@@ -31,7 +33,7 @@ public sealed class NoteData
     public double Top { get; set; } = 120;
     public double Width { get; set; } = 360;
     public double Height { get; set; } = 320;
-    public string Color { get; set; } = "#FFFF88";
+    public string Color { get; set; } = AppSettings.DefaultNoteColor;
     public string FontFamily { get; set; } = "Segoe UI";
     public double FontSize { get; set; } = 16;
     public string Text { get; set; } = "";

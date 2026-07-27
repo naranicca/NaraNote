@@ -48,6 +48,7 @@ public partial class NoteWindow : Window
     private (double X, double Y) _elementOrigin;
     private int _resizeEdge;
     private System.Drawing.Point _resizeStartCursor;
+    private System.Windows.Point _stylusResizeStartScreen;
     private Rect _resizeStartBounds;
     private bool _inkInputActive;
     private bool _suppressAutoPenUntilStylusLeaves;
@@ -63,6 +64,9 @@ public partial class NoteWindow : Window
         PreviewMouseLeftButtonDown += Resize_MouseLeftButtonDown;
         PreviewMouseMove += Resize_MouseMove;
         PreviewMouseLeftButtonUp += Resize_MouseLeftButtonUp;
+        AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Resize_PreviewStylusDown), true);
+        AddHandler(Stylus.PreviewStylusMoveEvent, new StylusEventHandler(Resize_PreviewStylusMove), true);
+        AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Resize_PreviewStylusUp), true);
         Surface.PreviewMouseLeftButtonDown += Surface_PreviewMouseLeftButtonDown;
         Ink.PreviewStylusDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
         Ink.PreviewStylusMove += (_, e) => { if (_inkInputActive) AutoExpandForInk(e.GetPosition(Ink)); };
@@ -70,6 +74,8 @@ public partial class NoteWindow : Window
         Ink.PreviewMouseLeftButtonDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
         Ink.PreviewMouseMove += (_, e) => { if (_inkInputActive && e.LeftButton == MouseButtonState.Pressed) AutoExpandForInk(e.GetPosition(Ink)); };
         Ink.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
+        Ink.AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Ink_PreviewStylusDownForObjectSelection), true);
+        Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForObjectSelection), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
         Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
         Surface.PreviewStylusMove += Surface_PreviewStylusForAutoPen;
@@ -168,15 +174,45 @@ public partial class NoteWindow : Window
         if (e.LeftButton != MouseButtonState.Pressed) { FinishResize(); return; }
         var current = System.Windows.Forms.Cursor.Position; var dpi = VisualTreeHelper.GetDpi(this);
         var dx = (current.X - _resizeStartCursor.X) / dpi.DpiScaleX; var dy = (current.Y - _resizeStartCursor.Y) / dpi.DpiScaleY;
+        ApplyResizeDelta(dx, dy);
+        e.Handled = true;
+    }
+    private void Resize_PreviewStylusDown(object sender, StylusDownEventArgs e)
+    {
+        var edge = GetInteractiveResizeEdge(e.GetPosition(this));
+        if (edge == 0 || IsPointerOverHeaderButton(e.GetPosition(this))) return;
+        _resizeEdge = edge;
+        _stylusResizeStartScreen = PointToScreen(e.GetPosition(this));
+        _resizeStartBounds = new Rect(Left, Top, Width, Height);
+        _inkInputActive = false;
+        Stylus.Capture(this, CaptureMode.SubTree);
+        e.Handled = true;
+    }
+    private void Resize_PreviewStylusMove(object sender, StylusEventArgs e)
+    {
+        if (_resizeEdge == 0 || !ReferenceEquals(Stylus.Captured, this)) return;
+        var current = PointToScreen(e.GetPosition(this));
+        var dpi = VisualTreeHelper.GetDpi(this);
+        ApplyResizeDelta((current.X - _stylusResizeStartScreen.X) / dpi.DpiScaleX, (current.Y - _stylusResizeStartScreen.Y) / dpi.DpiScaleY);
+        e.Handled = true;
+    }
+    private void Resize_PreviewStylusUp(object sender, StylusEventArgs e)
+    {
+        if (_resizeEdge == 0 || !ReferenceEquals(Stylus.Captured, this)) return;
+        FinishResize();
+        e.Handled = true;
+    }
+    private void ApplyResizeDelta(double dx, double dy)
+    {
         var left = _resizeStartBounds.Left; var top = _resizeStartBounds.Top; var width = _resizeStartBounds.Width; var height = _resizeStartBounds.Height;
         if ((_resizeEdge & 1) != 0) { var proposed = Math.Max(MinWidth, _resizeStartBounds.Width - dx); left = _resizeStartBounds.Right - proposed; width = proposed; }
         if ((_resizeEdge & 2) != 0) width = Math.Max(MinWidth, _resizeStartBounds.Width + dx);
         if ((_resizeEdge & 4) != 0) { var proposed = Math.Max(MinHeight, _resizeStartBounds.Height - dy); top = _resizeStartBounds.Bottom - proposed; height = proposed; }
         if ((_resizeEdge & 8) != 0) height = Math.Max(MinHeight, _resizeStartBounds.Height + dy);
-        Left = left; Top = top; Width = width; Height = height; e.Handled = true;
+        Left = left; Top = top; Width = width; Height = height;
     }
     private void Resize_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) { if (_resizeEdge != 0) { FinishResize(); e.Handled = true; } }
-    private void FinishResize() { _resizeEdge = 0; if (Mouse.Captured is not null) Mouse.Capture(null); Mouse.OverrideCursor = null; _vm.Touch(); }
+    private void FinishResize() { _resizeEdge = 0; if (Mouse.Captured is not null) Mouse.Capture(null); if (Stylus.Captured is not null) Stylus.Capture(null); Mouse.OverrideCursor = null; _vm.Touch(); }
     private bool IsPointerOverHeaderButton(System.Windows.Point point)
     {
         if (InputHitTest(point) is not DependencyObject hit) return false;
@@ -279,12 +315,43 @@ public partial class NoteWindow : Window
     }
     private void Ink_PreviewMouseDownForStraightLine(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton != MouseButton.Left || Ink.EditingMode != InkCanvasEditingMode.Ink || !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+        if (e.Handled || e.ChangedButton != MouseButton.Left || Ink.EditingMode != InkCanvasEditingMode.Ink || !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) return;
         e.Handled = true; _inkInputActive = false; UpdateShiftLineCursor();
         var current = e.GetPosition(Ink);
         if (_shiftLineAnchor is { } start && (current - start).Length >= 1) AddStraightInkLine(start, current);
         _shiftLineAnchor = current;
     }
+    private void Ink_PreviewStylusDownForObjectSelection(object sender, StylusDownEventArgs e)
+    {
+        if (Ink.EditingMode != InkCanvasEditingMode.Ink || !TrySelectObjectAt(e.GetPosition(Surface))) return;
+        _inkInputActive = false;
+        ResetShiftLineMode();
+        e.Handled = true;
+    }
+    private void Ink_PreviewMouseDownForObjectSelection(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled || e.ChangedButton != MouseButton.Left || Ink.EditingMode != InkCanvasEditingMode.Ink || !TrySelectObjectAt(e.GetPosition(Surface))) return;
+        _inkInputActive = false;
+        ResetShiftLineMode();
+        e.Handled = true;
+    }
+    private bool TrySelectObjectAt(System.Windows.Point point)
+    {
+        var element = _note.Elements
+            .Where(element => element is ImageElement or FileAttachmentElement)
+            .OrderByDescending(element => element.ZIndex)
+            .ThenByDescending(element => _note.Elements.IndexOf(element))
+            .FirstOrDefault(element => ElementContainsPoint(element, point));
+        if (element is null) return false;
+        SelectObject(element);
+        return true;
+    }
+    private bool ElementContainsPoint(NoteElement element, System.Windows.Point point) => element switch
+    {
+        ImageElement image => new Rect(image.X, image.Y, image.Width, image.Height + (string.IsNullOrWhiteSpace(image.Caption) ? 0 : Math.Max(24, Editor.FontSize * 2.5))).Contains(point),
+        FileAttachmentElement attachment => new Rect(attachment.X, attachment.Y, attachment.Width, attachment.Height).Contains(point),
+        _ => false
+    };
     private void AddStraightInkLine(System.Windows.Point start, System.Windows.Point end)
     {
         var now = Environment.TickCount64;
@@ -615,7 +682,7 @@ public partial class NoteWindow : Window
         var colorMenu = new MenuItem { Header = "노트 색상" };
         var presets = new[]
         {
-            ("노랑", "#FFFF88"), ("연두", "#FFCFF09E"), ("하늘색", "#FFBDEBFF"),
+            ("노랑", AppSettings.DefaultNoteColor), ("연두", "#FFCFF09E"), ("하늘색", "#FFBDEBFF"),
             ("분홍", "#FFFFC4D8"), ("주황", "#FFFFC27A"), ("연보라", "#FFDCC6FF"), ("연회색", "#FFF3F3F3")
         };
         foreach (var (name, value) in presets)
