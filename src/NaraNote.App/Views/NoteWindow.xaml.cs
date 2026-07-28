@@ -334,10 +334,11 @@ public partial class NoteWindow : Window
         if (_suppressAutoPenUntilStylusLeaves || Ink.EditingMode != InkCanvasEditingMode.None) return;
         Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink;
         if (e.RoutedEvent != Stylus.PreviewStylusDownEvent) return;
+        var initialPoints = e.GetStylusPoints(Ink);
         _autoPenInputActive = true;
-        _autoPenPoints = new StylusPointCollection();
+        _autoPenPoints = new StylusPointCollection(initialPoints.Description, Math.Max(1, initialPoints.Count));
         _autoPenAttributes = Ink.DefaultDrawingAttributes.Clone();
-        AppendAutoPenPoints(e.GetStylusPoints(Ink));
+        AppendAutoPenPoints(initialPoints);
         Stylus.Capture(Surface, CaptureMode.SubTree);
         e.Handled = true;
     }
@@ -362,7 +363,9 @@ public partial class NoteWindow : Window
         if (points.Count == 1)
         {
             var point = points[0];
-            points.Add(new StylusPoint(point.X + .1, point.Y + .1, point.PressureFactor));
+            point.X += .1;
+            point.Y += .1;
+            points.Add(point);
         }
         var stroke = new Stroke(points) { DrawingAttributes = attributes };
         Ink.Strokes.Add(stroke);
