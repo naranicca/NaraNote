@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Forms;
+using System.Windows.Interop;
 using NaraNote.App.Views;
 using NaraNote.Core.Models;
 using NaraNote.Core.Services;
@@ -16,6 +17,7 @@ public sealed class AppController : IDisposable
     private CancellationTokenSource? _debounce; private NotifyIcon? _tray;
     private System.Drawing.Icon? _appIcon;
     private GlobalHotKeyManager? _hotKeys; private bool _allVisible = true;
+    private Guid? _lastActiveNoteId;
     public AppState State { get; private set; } = new();
     public AppController(IAppStateStore store, FileLogger logger) { _store = store; _logger = logger; }
 
@@ -33,10 +35,14 @@ public sealed class AppController : IDisposable
     }
     public void NewNote(NoteData? source = null)
     {
-        var note = AppStateFactory.CreateNote(State.Settings, (source?.Left ?? 96) + 24, (source?.Top ?? 96) + 24);
-        PlaceNewNoteFullyVisible(note, source);
+        source ??= GetLastActiveNote();
+        var desiredLeft = source is null ? 96 : source.Left + source.Width + 12;
+        var desiredTop = source?.Top ?? 96;
+        var note = AppStateFactory.CreateNote(State.Settings, desiredLeft, desiredTop);
+        PlaceNewNoteBesideAnchor(note, source);
         State.Notes.Add(note); Show(note); ScheduleSave();
     }
+    public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
     public void Show(NoteData note)
     {
         note.IsOpen = true;
@@ -97,14 +103,32 @@ public sealed class AppController : IDisposable
         var clamped = NaraNote.Core.Utilities.WindowPlacement.Clamp(new(note.Left, note.Top, note.Width, note.Height), new(area.X, area.Y, area.Width, area.Height));
         note.Left = clamped.X; note.Top = clamped.Y; note.Width = clamped.Width; note.Height = clamped.Height;
     }
-    private static void PlaceNewNoteFullyVisible(NoteData note, NoteData? source)
+    private NoteData? GetLastActiveNote()
     {
-        var point = source is null
-            ? System.Windows.Forms.Cursor.Position
-            : new System.Drawing.Point((int)(source.Left + source.Width / 2), (int)(source.Top + source.Height / 2));
-        var screen = Screen.FromPoint(point); var area = screen.WorkingArea;
-        var clamped = NaraNote.Core.Utilities.WindowPlacement.ClampFullyVisible(new(note.Left, note.Top, note.Width, note.Height), new(area.X, area.Y, area.Width, area.Height));
-        note.Left = clamped.X; note.Top = clamped.Y; note.Width = clamped.Width; note.Height = clamped.Height;
+        if (_lastActiveNoteId is { } id && State.Notes.FirstOrDefault(note => note.Id == id && note.IsOpen) is { } active) return active;
+        return State.Notes.Where(note => note.IsOpen).OrderByDescending(note => note.LastModifiedUtc).FirstOrDefault();
+    }
+    private void PlaceNewNoteBesideAnchor(NoteData note, NoteData? anchor)
+    {
+        var (screen, area) = GetMonitorWorkArea(anchor);
+        var occupied = _windows
+            .Where(pair => Screen.FromHandle(new WindowInteropHelper(pair.Value).Handle).DeviceName == screen.DeviceName)
+            .Select(pair => State.Notes.First(noteData => noteData.Id == pair.Key))
+            .Select(existing => new RectData(existing.Left, existing.Top, existing.Width, existing.Height));
+        var placed = NaraNote.Core.Utilities.WindowPlacement.FindNonOverlapping(new(note.Left, note.Top, note.Width, note.Height), area, occupied);
+        note.Left = placed.X; note.Top = placed.Y; note.Width = placed.Width; note.Height = placed.Height;
+    }
+    private (Screen Screen, RectData WorkArea) GetMonitorWorkArea(NoteData? anchor)
+    {
+        if (anchor is not null && _windows.TryGetValue(anchor.Id, out var window) && new WindowInteropHelper(window).Handle is var hwnd && hwnd != IntPtr.Zero)
+        {
+            var screen = Screen.FromHandle(hwnd); var pixels = screen.WorkingArea;
+            var topLeft = window.PointFromScreen(new System.Windows.Point(pixels.Left, pixels.Top));
+            var bottomRight = window.PointFromScreen(new System.Windows.Point(pixels.Right, pixels.Bottom));
+            return (screen, new(window.Left + topLeft.X, window.Top + topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y));
+        }
+        var fallback = Screen.FromPoint(System.Windows.Forms.Cursor.Position); var area = fallback.WorkingArea;
+        return (fallback, new(area.X, area.Y, area.Width, area.Height));
     }
     private void SetupHotKeys()
     {

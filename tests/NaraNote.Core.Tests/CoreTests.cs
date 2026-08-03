@@ -64,6 +64,25 @@ public sealed class CoreTests
         Assert.True(negative.X >= -1920); Assert.True(negative.X + negative.Width <= 0); Assert.True(negative.Y >= 0);
     }
 
+    [Fact]
+    public void New_window_is_placed_beside_anchor_without_overlap()
+    {
+        var anchor = new RectData(100, 100, 360, 320);
+        var result = WindowPlacement.FindNonOverlapping(new(472, 100, 360, 320), new(0, 0, 1920, 1080), [anchor]);
+        Assert.Equal(472, result.X); Assert.Equal(100, result.Y);
+    }
+
+    [Fact]
+    public void New_window_avoids_other_notes_and_stays_on_monitor()
+    {
+        var area = new RectData(-1920, 0, 1920, 1080);
+        var occupied = new[] { new RectData(-800, 100, 360, 320), new RectData(-428, 100, 360, 320) };
+        var result = WindowPlacement.FindNonOverlapping(new(-428, 100, 360, 320), area, occupied);
+        Assert.True(result.X >= area.X && result.X + result.Width <= area.X + area.Width);
+        Assert.True(result.Y >= area.Y && result.Y + result.Height <= area.Y + area.Height);
+        Assert.All(occupied, rect => Assert.False(result.X < rect.X + rect.Width && result.X + result.Width > rect.X && result.Y < rect.Y + rect.Height && result.Y + result.Height > rect.Y));
+    }
+
     [Fact] public void Contrast_handles_dark_and_light() { Assert.True(ColorContrast.UseLightForeground("#111111")); Assert.False(ColorContrast.UseLightForeground("#FFFFFF")); }
 
     [Theory]

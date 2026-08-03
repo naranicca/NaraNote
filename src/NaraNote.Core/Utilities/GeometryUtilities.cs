@@ -66,6 +66,37 @@ public static class WindowPlacement
         var y = Math.Clamp(window.Y, workArea.Y, workArea.Y + workArea.Height - height);
         return new(x, y, width, height);
     }
+
+    public static RectData FindNonOverlapping(RectData desired, RectData workArea, IEnumerable<RectData> occupied, double gap = 12)
+    {
+        desired = ClampFullyVisible(desired, workArea);
+        var blocked = occupied.Where(rect => Intersects(rect, workArea)).ToList();
+        var xs = new HashSet<double> { desired.X, workArea.X, workArea.X + workArea.Width - desired.Width };
+        var ys = new HashSet<double> { desired.Y, workArea.Y, workArea.Y + workArea.Height - desired.Height };
+        foreach (var rect in blocked)
+        {
+            xs.Add(rect.X + rect.Width + gap); xs.Add(rect.X - desired.Width - gap); xs.Add(rect.X);
+            ys.Add(rect.Y + rect.Height + gap); ys.Add(rect.Y - desired.Height - gap); ys.Add(rect.Y);
+        }
+        var candidates = from x in xs from y in ys
+                         let candidate = new RectData(x, y, desired.Width, desired.Height)
+                         where FullyInside(candidate, workArea)
+                         orderby DistanceSquared(candidate, desired)
+                         select candidate;
+        var available = candidates.FirstOrDefault(candidate => blocked.All(rect => !Intersects(candidate, rect)));
+        if (available.Width > 0 && available.Height > 0) return available;
+        for (var y = workArea.Y; y <= workArea.Y + workArea.Height - desired.Height; y += 8)
+            for (var x = workArea.X; x <= workArea.X + workArea.Width - desired.Width; x += 8)
+            {
+                var candidate = new RectData(x, y, desired.Width, desired.Height);
+                if (blocked.All(rect => !Intersects(candidate, rect))) return candidate;
+            }
+        return desired;
+    }
+
+    private static bool FullyInside(RectData rect, RectData area) => rect.X >= area.X && rect.Y >= area.Y && rect.X + rect.Width <= area.X + area.Width && rect.Y + rect.Height <= area.Y + area.Height;
+    private static bool Intersects(RectData a, RectData b) => a.X < b.X + b.Width && a.X + a.Width > b.X && a.Y < b.Y + b.Height && a.Y + a.Height > b.Y;
+    private static double DistanceSquared(RectData a, RectData b) => Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2);
 }
 
 public enum DroppedFileKind { Text, Image, Attachment }
