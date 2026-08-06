@@ -50,6 +50,9 @@ public partial class NoteWindow : Window
     private FrameworkElement? _selectedVisual;
     private System.Windows.Point _dragOrigin;
     private (double X, double Y) _elementOrigin;
+    private bool _stylusWindowDragActive;
+    private System.Windows.Point _stylusWindowDragStartScreen;
+    private System.Windows.Point _stylusWindowDragStartPosition;
     private int _resizeEdge;
     private System.Drawing.Point _resizeStartCursor;
     private System.Windows.Point _stylusResizeStartScreen;
@@ -75,6 +78,9 @@ public partial class NoteWindow : Window
         PreviewMouseLeftButtonDown += Resize_MouseLeftButtonDown;
         PreviewMouseMove += Resize_MouseMove;
         PreviewMouseLeftButtonUp += Resize_MouseLeftButtonUp;
+        TitleArea.PreviewStylusDown += TitleArea_PreviewStylusDown;
+        TitleArea.PreviewStylusMove += TitleArea_PreviewStylusMove;
+        TitleArea.PreviewStylusUp += TitleArea_PreviewStylusUp;
         AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Resize_PreviewStylusDown), true);
         AddHandler(Stylus.PreviewStylusMoveEvent, new StylusEventHandler(Resize_PreviewStylusMove), true);
         AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Resize_PreviewStylusUp), true);
@@ -102,7 +108,7 @@ public partial class NoteWindow : Window
         Activated += (_, _) => _controller.NoteActivated(_note);
         PreviewKeyDown += Window_PreviewKeyDown;
         PreviewKeyUp += Window_PreviewKeyUp;
-        Deactivated += (_, _) => ResetShiftLineMode();
+        Deactivated += (_, _) => { ResetShiftLineMode(); FinishStylusWindowDrag(); };
         _loading = false;
     }
     public void FocusEditor()
@@ -166,6 +172,39 @@ public partial class NoteWindow : Window
         if (e.LeftButton != MouseButtonState.Pressed) return;
         if (e.OriginalSource is DependencyObject source && FindAncestor<Button>(source) is not null) return;
         DragMove(); e.Handled = true;
+    }
+    private void TitleArea_PreviewStylusDown(object sender, StylusDownEventArgs e)
+    {
+        var point = e.GetPosition(this);
+        if (GetInteractiveResizeEdge(point) != 0) return;
+        if (e.OriginalSource is DependencyObject source && FindAncestor<Button>(source) is not null) return;
+        _stylusWindowDragActive = true;
+        _stylusWindowDragStartScreen = PointToScreen(point);
+        _stylusWindowDragStartPosition = new System.Windows.Point(Left, Top);
+        Stylus.Capture(TitleArea, CaptureMode.SubTree);
+        e.Handled = true;
+    }
+    private void TitleArea_PreviewStylusMove(object sender, StylusEventArgs e)
+    {
+        if (!_stylusWindowDragActive || !ReferenceEquals(Stylus.Captured, TitleArea)) return;
+        var current = PointToScreen(e.GetPosition(this));
+        var dpi = VisualTreeHelper.GetDpi(this);
+        Left = _stylusWindowDragStartPosition.X + (current.X - _stylusWindowDragStartScreen.X) / dpi.DpiScaleX;
+        Top = _stylusWindowDragStartPosition.Y + (current.Y - _stylusWindowDragStartScreen.Y) / dpi.DpiScaleY;
+        e.Handled = true;
+    }
+    private void TitleArea_PreviewStylusUp(object sender, StylusEventArgs e)
+    {
+        if (!_stylusWindowDragActive) return;
+        FinishStylusWindowDrag();
+        e.Handled = true;
+    }
+    private void FinishStylusWindowDrag()
+    {
+        if (!_stylusWindowDragActive) return;
+        _stylusWindowDragActive = false;
+        if (ReferenceEquals(Stylus.Captured, TitleArea)) Stylus.Capture(null);
+        _vm.Touch();
     }
     private static T? FindAncestor<T>(DependencyObject source) where T : DependencyObject
     {
