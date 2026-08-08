@@ -76,7 +76,8 @@ public sealed class NoteDocumentExporter
 
     private static NoteDocumentManifest CreateManifest(NoteData note) => new()
     {
-        NoteId = note.Id, Text = note.Text, SyntaxLanguage = note.SyntaxLanguage, Width = note.Width, Height = note.Height, Color = note.Color,
+        NoteId = note.Id, Text = note.Text, SyntaxLanguage = note.SyntaxLanguage, IsSyntaxLanguageExplicit = note.IsSyntaxLanguageExplicit,
+        Width = note.Width, Height = note.Height, Color = note.Color,
         FontFamily = note.FontFamily, FontSize = note.FontSize, LastModifiedUtc = note.LastModifiedUtc,
         Elements = note.Elements.Select(element => element switch
         {
@@ -99,6 +100,7 @@ public sealed class NoteDocumentExporter
         public Guid NoteId { get; set; }
         public string Text { get; set; } = "";
         public string SyntaxLanguage { get; set; } = "PlainText";
+        public bool IsSyntaxLanguageExplicit { get; set; }
         public double Width { get; set; }
         public double Height { get; set; }
         public string Color { get; set; } = "";

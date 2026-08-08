@@ -37,6 +37,7 @@ dotnet publish src/NaraNote.App/NaraNote.App.csproj -c Release -o publish
 - 최초 실행 시 360×320 노란 노트 생성, 상단 빈 영역 이동, 8px 네이티브 가장자리/모서리 리사이즈
 - `+`/`Ctrl+N` 새 노트, `X`는 현재 노트만 닫음
 - 텍스트, Unicode, 폰트/크기/색상 설정 및 500ms debounce 자동 저장
+- 새 노트는 Enter, `Ctrl+V`, 텍스트 파일 드롭 시 C#, C/C++, Python, Lua, JSON, XML, HTML, JavaScript, CSS, Markdown, PowerShell 구문을 자동 감지합니다. 사용자가 언어나 일반 텍스트를 직접 선택하면 자동 감지를 중단합니다.
 - `Ctrl++`, `Ctrl+-`, `Ctrl+0`; 이미지 우선 `Ctrl+V`
 - 이미지/텍스트/기타 파일 드롭, 첨부 더블클릭 실행, 누락 첨부 경고
 - 이미지와 첨부의 단일 선택·드래그 이동, 이미지 모서리 비율 리사이즈와 접근 가능 영역 제한
