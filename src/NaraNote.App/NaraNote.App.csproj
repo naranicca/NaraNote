@@ -22,5 +22,9 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\NaraNote.ico" />
+    <EmbeddedResource Include="Resources\Lua.xshd" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
   </ItemGroup>
 </Project>

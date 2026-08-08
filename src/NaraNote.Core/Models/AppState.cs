@@ -40,6 +40,7 @@ public sealed class NoteData
     public string FontFamily { get; set; } = "Segoe UI";
     public double FontSize { get; set; } = 16;
     public string Text { get; set; } = "";
+    public string SyntaxLanguage { get; set; } = "PlainText";
     public string? ExportFilePath { get; set; }
     public bool IsExportDirty { get; set; }
     public bool IsOpen { get; set; } = true;

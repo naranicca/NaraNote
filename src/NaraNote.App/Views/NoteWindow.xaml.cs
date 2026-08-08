@@ -18,6 +18,9 @@ using NaraNote.Core.Models;
 using NaraNote.Core.Utilities;
 using NaraNote.Infrastructure.Persistence;
 using Microsoft.Win32;
+using ICSharpCode.AvalonEdit.Highlighting;
+using ICSharpCode.AvalonEdit.Highlighting.Xshd;
+using System.Xml;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
@@ -45,6 +48,7 @@ public partial class NoteWindow : Window
     private const uint DwmColorNone = 0xFFFFFFFE;
     private const double DefaultPenThickness = 3.5;
     private static readonly double[] PenThicknessSteps = [1d, 2d, DefaultPenThickness, 6d, 10d];
+    private static IHighlightingDefinition? _luaHighlighting;
     private readonly NoteData _note; private readonly AppController _controller; private readonly NoteViewModel _vm;
     private bool _loading = true; private readonly ScribbleRecognizer _scribble = new();
     private readonly UndoManager _history = new();
@@ -123,7 +127,7 @@ public partial class NoteWindow : Window
     {
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
         {
-            Editor.Focus(); Keyboard.Focus(Editor); Editor.CaretIndex = Editor.Text.Length;
+            Editor.Focus(); Keyboard.Focus(Editor); Editor.CaretOffset = Editor.Text.Length;
         }));
     }
     public void ApplyAppSettings() => ApplyPenSettings();
@@ -154,6 +158,7 @@ public partial class NoteWindow : Window
         ExportDirtyIndicator.Foreground = headerForeground;
         UpdateExportPathDisplay();
         Foreground = foreground; Editor.Foreground = foreground; Editor.FontSize = _note.FontSize; Editor.FontFamily = new FontFamily(_note.FontFamily);
+        ApplySyntaxHighlighting();
         ApplyCaptionTypography();
     }
     private void ApplyCaptionTypography()
@@ -338,7 +343,7 @@ public partial class NoteWindow : Window
         1 or 2 => Cursors.SizeWE, 4 or 8 => Cursors.SizeNS, 5 or 10 => Cursors.SizeNWSE,
         6 or 9 => Cursors.SizeNESW, _ => null
     };
-    private void Editor_TextChanged(object sender, TextChangedEventArgs e) { if (!_loading) _vm.Text = Editor.Text; }
+    private void Editor_TextChanged(object? sender, EventArgs e) { if (!_loading) _vm.Text = Editor.Text; }
 
     private void Editor_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -594,11 +599,17 @@ public partial class NoteWindow : Window
         switch (FileClassifier.Classify(path))
         {
             case DroppedFileKind.Text:
-                try { var info = new FileInfo(path); if (info.Length <= 5 * 1024 * 1024) Editor.SelectedText = File.ReadAllText(path); else MessageBox.Show("5MB보다 큰 텍스트 파일은 삽입할 수 없습니다."); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show("파일을 읽을 수 없습니다."); } break;
+                try { var info = new FileInfo(path); if (info.Length <= 5 * 1024 * 1024) InsertEditorText(File.ReadAllText(path)); else MessageBox.Show("5MB보다 큰 텍스트 파일은 삽입할 수 없습니다."); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show("파일을 읽을 수 없습니다."); } break;
             case DroppedFileKind.Image:
                 try { var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.UriSource = new Uri(path); bitmap.EndInit(); bitmap.Freeze(); AddBitmap(bitmap, x, y); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { MessageBox.Show("이미지를 열 수 없습니다."); } break;
             default: AddAttachment(new() { OriginalFilePath = path, DisplayName = Path.GetFileName(path), X = x, Y = y }); break;
         }
+    }
+    private void InsertEditorText(string text)
+    {
+        var offset = Editor.SelectionStart;
+        Editor.Document.Replace(offset, Editor.SelectionLength, text);
+        Editor.CaretOffset = offset + text.Length;
     }
     private void AddBitmap(BitmapSource bitmap, double x, double y)
     {
@@ -842,13 +853,74 @@ public partial class NoteWindow : Window
         pen.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink; UpdateShiftLineCursor(); UpdateToolModeMenu(); };
         erase.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke; ResetShiftLineMode(); UpdateToolModeMenu(); };
         menu.Opened += (_, _) => UpdateToolModeMenu();
-        menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu); AddNoteColorMenu(menu);
+        menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu); AddNoteColorMenu(menu); AddSyntaxLanguageMenu(menu);
         menu.Items.Add(new Separator());
         var settings = new MenuItem { Header = "설정" };
         settings.Click += Settings_Click;
         menu.Items.Add(settings);
         menu.Closed += (_, _) => { menu.PlacementTarget = null; menu.Placement = PlacementMode.MousePoint; };
         Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
+    }
+    private void AddSyntaxLanguageMenu(ContextMenu menu)
+    {
+        var syntax = new MenuItem { Header = "구문 강조" };
+        var languages = new (string Label, string Value)[]
+        {
+            ("일반 텍스트", "PlainText"), ("C#", "CSharp"), ("C/C++", "Cpp"), ("Python", "Python"), ("Lua", "Lua"),
+            ("JSON", "Json"), ("XML", "Xml"), ("HTML", "Html"), ("JavaScript", "JavaScript"),
+            ("CSS", "Css"), ("Markdown", "Markdown"), ("PowerShell", "PowerShell")
+        };
+        var items = new List<MenuItem>();
+        foreach (var (label, value) in languages)
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true };
+            item.Click += (_, _) =>
+            {
+                _note.SyntaxLanguage = value;
+                ApplySyntaxHighlighting();
+                _vm.Touch();
+            };
+            items.Add(item);
+            syntax.Items.Add(item);
+        }
+        syntax.SubmenuOpened += (_, _) =>
+        {
+            for (var i = 0; i < items.Count; i++) items[i].IsChecked = languages[i].Value == _note.SyntaxLanguage;
+        };
+        menu.Items.Add(syntax);
+    }
+    private void ApplySyntaxHighlighting()
+    {
+        var definitionName = _note.SyntaxLanguage switch
+        {
+            "CSharp" => "C#",
+            "Cpp" => "C++",
+            "Python" => "Python",
+            "Lua" => "Lua",
+            "Json" => "Json",
+            "Xml" => "XML",
+            "Html" => "HTML",
+            "JavaScript" => "JavaScript",
+            "Css" => "CSS",
+            "Markdown" => "MarkDown",
+            "PowerShell" => "PowerShell",
+            _ => null
+        };
+        Editor.SyntaxHighlighting = definitionName switch
+        {
+            null => null,
+            "Lua" => LoadLuaHighlighting(),
+            _ => HighlightingManager.Instance.GetDefinition(definitionName)
+        };
+    }
+    private static IHighlightingDefinition? LoadLuaHighlighting()
+    {
+        if (_luaHighlighting is not null) return _luaHighlighting;
+        using var stream = typeof(NoteWindow).Assembly.GetManifestResourceStream("NaraNote.App.Resources.Lua.xshd");
+        if (stream is null) return null;
+        using var reader = XmlReader.Create(stream);
+        _luaHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+        return _luaHighlighting;
     }
     private void AddTextEditingMenus(ContextMenu menu)
     {
@@ -915,7 +987,7 @@ public partial class NoteWindow : Window
         return new NoteData
         {
             Id = _note.Id, Width = Width, Height = Height, Color = _note.Color, FontFamily = _note.FontFamily,
-            FontSize = _note.FontSize, Text = Editor.Text, LastModifiedUtc = DateTimeOffset.UtcNow, Elements = elements
+            FontSize = _note.FontSize, Text = Editor.Text, SyntaxLanguage = _note.SyntaxLanguage, LastModifiedUtc = DateTimeOffset.UtcNow, Elements = elements
         };
     }
     private static string CreateSuggestedExportName(string text)
