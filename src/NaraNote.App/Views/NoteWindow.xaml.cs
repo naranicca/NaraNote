@@ -16,6 +16,7 @@ using NaraNote.Core.Commands;
 using NaraNote.Core.Drawing;
 using NaraNote.Core.Models;
 using NaraNote.Core.Utilities;
+using NaraNote.Infrastructure.Persistence;
 using Microsoft.Win32;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -32,6 +33,7 @@ using Panel = System.Windows.Controls.Panel;
 using TextBox = System.Windows.Controls.TextBox;
 using IDataObject = System.Windows.IDataObject;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 
 namespace NaraNote.App.Views;
 
@@ -46,6 +48,7 @@ public partial class NoteWindow : Window
     private readonly NoteData _note; private readonly AppController _controller; private readonly NoteViewModel _vm;
     private bool _loading = true; private readonly ScribbleRecognizer _scribble = new();
     private readonly UndoManager _history = new();
+    private readonly NoteDocumentExporter _documentExporter = new();
     private NoteElement? _selectedElement;
     private FrameworkElement? _selectedVisual;
     private System.Windows.Point _dragOrigin;
@@ -64,6 +67,7 @@ public partial class NoteWindow : Window
     private bool _autoPenInputActive;
     private StylusPointCollection? _autoPenPoints;
     private DrawingAttributes? _autoPenAttributes;
+    private ContextMenu? _noteContextMenu;
     private bool _suppressAutoPenUntilStylusLeaves;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
@@ -71,7 +75,11 @@ public partial class NoteWindow : Window
     {
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
         SourceInitialized += (_, _) => EnableNativeWindowAppearance();
-        _vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(NoteViewModel.Color)) ApplyAppearance(); };
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(NoteViewModel.Color)) ApplyAppearance();
+            if (e.PropertyName == nameof(NoteData.IsExportDirty)) UpdateExportPathDisplay();
+        };
         Left = note.Left; Top = note.Top; Width = note.Width; Height = note.Height; Topmost = note.IsAlwaysOnTop;
         ApplyPenSettings();
         Editor.Text = note.Text; ApplyAppearance(); RestoreElements(); BuildContextMenu();
@@ -106,7 +114,7 @@ public partial class NoteWindow : Window
         LocationChanged += (_, _) => { _note.Left = Left; _note.Top = Top; _vm.Touch(); };
         SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; _vm.Touch(); };
         Activated += (_, _) => _controller.NoteActivated(_note);
-        PreviewKeyDown += Window_PreviewKeyDown;
+        AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
         Deactivated += (_, _) => { ResetShiftLineMode(); FinishStylusWindowDrag(); };
         _loading = false;
@@ -142,6 +150,9 @@ public partial class NoteWindow : Window
             ? new SolidColorBrush(Color.FromArgb(210, 255, 255, 255))
             : new SolidColorBrush(Color.FromArgb(145, 0, 0, 0));
         headerForeground.Freeze(); NewNoteButton.Foreground = headerForeground; SettingsButton.Foreground = headerForeground; CloseNoteButton.Foreground = headerForeground;
+        ExportPathTextBlock.Foreground = headerForeground;
+        ExportDirtyIndicator.Foreground = headerForeground;
+        UpdateExportPathDisplay();
         Foreground = foreground; Editor.Foreground = foreground; Editor.FontSize = _note.FontSize; Editor.FontFamily = new FontFamily(_note.FontFamily);
         ApplyCaptionTypography();
     }
@@ -163,6 +174,14 @@ public partial class NoteWindow : Window
         var dialog = new SettingsWindow(_vm, _controller.State.Settings) { Owner = this };
         var confirmed = dialog.ShowDialog() == true;
         ApplyAppearance(); if (confirmed) _controller.ApplySettings(); await _controller.SaveNowAsync();
+    }
+    private void Menu_Click(object sender, RoutedEventArgs e)
+    {
+        if (_noteContextMenu is null) return;
+        _noteContextMenu.PlacementTarget = SettingsButton;
+        _noteContextMenu.Placement = PlacementMode.Bottom;
+        _noteContextMenu.IsOpen = true;
+        e.Handled = true;
     }
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
     protected override void OnClosing(CancelEventArgs e) { _note.IsOpen = false; base.OnClosing(e); }
@@ -253,16 +272,21 @@ public partial class NoteWindow : Window
     private void Resize_PreviewStylusMove(object sender, StylusEventArgs e)
     {
         if (_resizeEdge == 0 || !ReferenceEquals(Stylus.Captured, this)) return;
-        var current = PointToScreen(e.GetPosition(this));
-        var dpi = VisualTreeHelper.GetDpi(this);
-        ApplyResizeDelta((current.X - _stylusResizeStartScreen.X) / dpi.DpiScaleX, (current.Y - _stylusResizeStartScreen.Y) / dpi.DpiScaleY);
+        ApplyStylusResizePosition(e);
         e.Handled = true;
     }
     private void Resize_PreviewStylusUp(object sender, StylusEventArgs e)
     {
         if (_resizeEdge == 0 || !ReferenceEquals(Stylus.Captured, this)) return;
+        ApplyStylusResizePosition(e);
         FinishResize();
         e.Handled = true;
+    }
+    private void ApplyStylusResizePosition(StylusEventArgs e)
+    {
+        var current = PointToScreen(e.GetPosition(this));
+        var dpi = VisualTreeHelper.GetDpi(this);
+        ApplyResizeDelta((current.X - _stylusResizeStartScreen.X) / dpi.DpiScaleX, (current.Y - _stylusResizeStartScreen.Y) / dpi.DpiScaleY);
     }
     private void ApplyResizeDelta(double dx, double dy)
     {
@@ -324,13 +348,15 @@ public partial class NoteWindow : Window
         else if (ctrl && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { _vm.FontSize -= 2; ApplyAppearance(); e.Handled = true; }
         else if (ctrl && e.Key == Key.D0) { _vm.FontSize = _controller.State.Settings.DefaultFontSize; ApplyAppearance(); e.Handled = true; }
         else if (ctrl && e.Key == Key.V && TryPasteRich()) e.Handled = true;
-        else if (e.Key == Key.Escape) { Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; Editor.Focus(); e.Handled = true; }
+        else if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; }
     }
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
+        if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; return; }
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-        if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Add || e.Key == Key.OemPlus)) { ChangePenThickness(1); e.Handled = true; }
+        if (ctrl && e.Key == Key.S) { _ = ExportCurrentNoteAsync(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)); e.Handled = true; }
+        else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Add || e.Key == Key.OemPlus)) { ChangePenThickness(1); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { ChangePenThickness(-1); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetPenThickness(DefaultPenThickness); e.Handled = true; }
         else if (ctrl && e.Key == Key.Z && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None)) { _history.Undo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
@@ -341,15 +367,20 @@ public partial class NoteWindow : Window
             _history.Execute(new DelegateCommand(() => _note.Elements.Remove(element), () => _note.Elements.Add(element)));
             ClearObjectSelection(); RestoreElements(); _vm.Touch(); e.Handled = true;
         }
-        else if (e.Key == Key.Escape && Ink.EditingMode != InkCanvasEditingMode.None)
-        {
-            Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; _inkInputActive = false;
-            CancelAutoPenInput();
-            _suppressAutoPenUntilStylusLeaves = true;
-            ResetShiftLineMode();
-            ClearObjectSelection(); Editor.Focus(); Keyboard.Focus(Editor); e.Handled = true;
-        }
         else if (e.Key == Key.Escape) ClearObjectSelection();
+    }
+    private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive || _autoPenInputActive;
+    private void SwitchToTextMode()
+    {
+        Ink.EditingMode = InkCanvasEditingMode.None;
+        Ink.IsHitTestVisible = false;
+        _inkInputActive = false;
+        CancelAutoPenInput();
+        _suppressAutoPenUntilStylusLeaves = true;
+        ResetShiftLineMode();
+        ClearObjectSelection();
+        Editor.Focus();
+        Keyboard.Focus(Editor);
     }
     private void Window_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -792,6 +823,7 @@ public partial class NoteWindow : Window
     private void BuildContextMenu()
     {
         var menu = new ContextMenu();
+        _noteContextMenu = menu;
         AddTextEditingMenus(menu);
         menu.Items.Add(new Separator());
         var select = new MenuItem { Header = "텍스트 모드", IsCheckable = true };
@@ -806,14 +838,24 @@ public partial class NoteWindow : Window
             erase.IsChecked = Ink.EditingMode == InkCanvasEditingMode.EraseByStroke;
             erase.Visibility = hasInk ? Visibility.Visible : Visibility.Collapsed;
         }
-        select.Click += (_, _) => { Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; _inkInputActive = false; CancelAutoPenInput(); _suppressAutoPenUntilStylusLeaves = true; ResetShiftLineMode(); Editor.Focus(); UpdateToolModeMenu(); };
+        select.Click += (_, _) => { SwitchToTextMode(); UpdateToolModeMenu(); };
         pen.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink; UpdateShiftLineCursor(); UpdateToolModeMenu(); };
         erase.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke; ResetShiftLineMode(); UpdateToolModeMenu(); };
         menu.Opened += (_, _) => UpdateToolModeMenu();
-        menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu); AddNoteColorMenu(menu); Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
+        menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu); AddNoteColorMenu(menu);
+        menu.Items.Add(new Separator());
+        var settings = new MenuItem { Header = "설정" };
+        settings.Click += Settings_Click;
+        menu.Items.Add(settings);
+        menu.Closed += (_, _) => { menu.PlacementTarget = null; menu.Placement = PlacementMode.MousePoint; };
+        Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
     }
     private void AddTextEditingMenus(ContextMenu menu)
     {
+        var save = new MenuItem { Header = "현재 노트 저장", InputGestureText = "Ctrl+S" };
+        save.Click += (_, _) => _ = ExportCurrentNoteAsync(false);
+        menu.Items.Add(save);
+        menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "실행 취소", Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
         menu.Items.Add(new MenuItem { Header = "다시 실행", Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
         menu.Items.Add(new Separator());
@@ -822,6 +864,76 @@ public partial class NoteWindow : Window
         menu.Items.Add(new MenuItem { Header = "붙여넣기", Command = ApplicationCommands.Paste, CommandTarget = Editor, InputGestureText = "Ctrl+V" });
         menu.Items.Add(new MenuItem { Header = "삭제", Command = ApplicationCommands.Delete, CommandTarget = Editor, InputGestureText = "Delete" });
         menu.Items.Add(new MenuItem { Header = "전체 선택", Command = ApplicationCommands.SelectAll, CommandTarget = Editor, InputGestureText = "Ctrl+A" });
+    }
+    private async Task ExportCurrentNoteAsync(bool saveAs)
+    {
+        try
+        {
+            Keyboard.ClearFocus();
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Input);
+            var snapshot = CreateExportSnapshot();
+            var rich = snapshot.Elements.Count > 0;
+            var path = _note.ExportFilePath;
+            var canReuse = !saveAs && !string.IsNullOrWhiteSpace(path) && (!rich || string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase));
+            if (!canReuse)
+            {
+                var dialog = new SaveFileDialog
+                {
+                    Title = "현재 노트 저장",
+                    AddExtension = true,
+                    OverwritePrompt = true,
+                    DefaultExt = rich ? ".naranote" : ".txt",
+                    Filter = rich ? "NaraNote 문서 (*.naranote)|*.naranote" : "텍스트 파일 (*.txt)|*.txt|NaraNote 문서 (*.naranote)|*.naranote",
+                    FileName = CreateSuggestedExportName(snapshot.Text)
+                };
+                if (dialog.ShowDialog(this) != true) return;
+                path = dialog.FileName;
+            }
+            if (string.IsNullOrWhiteSpace(path)) return;
+            await _documentExporter.ExportAsync(snapshot, path);
+            _vm.MarkExported(path);
+            UpdateExportPathDisplay();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or InvalidDataException)
+        {
+            MessageBox.Show("현재 노트를 파일로 저장하지 못했습니다. 저장 위치와 파일 접근 권한을 확인해 주세요.", "NaraNote");
+        }
+    }
+    private NoteData CreateExportSnapshot()
+    {
+        var elements = _note.Elements.Where(element => element is not InkStrokeElement).Select(element => element switch
+        {
+            ImageElement image => (NoteElement)new ImageElement { Id = image.Id, ZIndex = image.ZIndex, StoredFilePath = image.StoredFilePath, X = image.X, Y = image.Y, Width = image.Width, Height = image.Height, Caption = image.Caption },
+            FileAttachmentElement file => new FileAttachmentElement { Id = file.Id, ZIndex = file.ZIndex, OriginalFilePath = file.OriginalFilePath, DisplayName = file.DisplayName, X = file.X, Y = file.Y, Width = file.Width, Height = file.Height },
+            _ => throw new NotSupportedException($"지원하지 않는 노트 요소입니다: {element.GetType().Name}")
+        }).ToList();
+        elements.AddRange(Ink.Strokes.Select(stroke => (NoteElement)new InkStrokeElement
+        {
+            Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width,
+            Points = stroke.StylusPoints.Select(point => new InkPointData(point.X, point.Y, point.PressureFactor)).ToList()
+        }));
+        return new NoteData
+        {
+            Id = _note.Id, Width = Width, Height = Height, Color = _note.Color, FontFamily = _note.FontFamily,
+            FontSize = _note.FontSize, Text = Editor.Text, LastModifiedUtc = DateTimeOffset.UtcNow, Elements = elements
+        };
+    }
+    private static string CreateSuggestedExportName(string text)
+    {
+        var firstLine = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+        var name = string.IsNullOrWhiteSpace(firstLine) ? $"NaraNote-{DateTime.Now:yyyyMMdd-HHmm}" : firstLine;
+        foreach (var invalid in Path.GetInvalidFileNameChars()) name = name.Replace(invalid, '_');
+        if (name.Length > 48) name = name[..48].Trim();
+        return string.IsNullOrWhiteSpace(name) ? "NaraNote" : name;
+    }
+    private void UpdateExportPathDisplay()
+    {
+        if (ExportPathTextBlock is null) return;
+        var path = _note.ExportFilePath;
+        ExportPathTextBlock.Text = path ?? "";
+        ExportPathTextBlock.ToolTip = string.IsNullOrWhiteSpace(path) ? null : _note.IsExportDirty ? $"{path}\n저장한 파일 이후 수정됨" : path;
+        ExportPathTextBlock.Visibility = string.IsNullOrWhiteSpace(path) ? Visibility.Collapsed : Visibility.Visible;
+        ExportDirtyIndicator.Visibility = !string.IsNullOrWhiteSpace(path) && _note.IsExportDirty ? Visibility.Visible : Visibility.Collapsed;
     }
     private void AddNoteColorMenu(ContextMenu menu)
     {

@@ -3,12 +3,43 @@ using NaraNote.Core.Drawing;
 using NaraNote.Core.Models;
 using NaraNote.Core.Services;
 using NaraNote.Core.Utilities;
+using NaraNote.Infrastructure.Persistence;
+using System.IO.Compression;
 
 namespace NaraNote.Core.Tests;
 
 public sealed class CoreTests
 {
     [Fact] public void Empty_state_gets_default_note() => Assert.Single(AppStateFactory.EnsureUsable(new AppState()).Notes);
+
+    [Fact]
+    public async Task Text_note_exports_as_utf8_text()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaraNote-tests-{Guid.NewGuid():N}"); Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "note.txt");
+            await new NoteDocumentExporter().ExportAsync(new NoteData { Text = "한글\ntext" }, path);
+            Assert.Equal("한글\ntext", await File.ReadAllTextAsync(path));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task Rich_note_package_contains_manifest_and_assets()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaraNote-tests-{Guid.NewGuid():N}"); Directory.CreateDirectory(root);
+        try
+        {
+            var image = Path.Combine(root, "image.png"); var attachment = Path.Combine(root, "report.pdf");
+            await File.WriteAllBytesAsync(image, [1, 2, 3]); await File.WriteAllBytesAsync(attachment, [4, 5, 6]);
+            var note = new NoteData { Text = "rich", Elements = [new ImageElement { StoredFilePath = image }, new FileAttachmentElement { OriginalFilePath = attachment, DisplayName = "report.pdf" }, new InkStrokeElement { Points = [new(1, 2), new(3, 4)] }] };
+            var path = Path.Combine(root, "note.naranote"); await new NoteDocumentExporter().ExportAsync(note, path);
+            using var archive = ZipFile.OpenRead(path); var names = archive.Entries.Select(entry => entry.FullName).ToList();
+            Assert.Contains("manifest.json", names); Assert.Contains(names, name => name.StartsWith("images/")); Assert.Contains(names, name => name.StartsWith("attachments/"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
 
     [Fact] public void New_note_uses_saved_font_defaults()
     {

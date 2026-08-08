@@ -40,6 +40,11 @@
   <Grid>
    <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="*"/></Grid.RowDefinitions>
    <Grid x:Name="TitleArea" Grid.Row="0" Background="Transparent" MouseLeftButtonDown="TitleArea_MouseLeftButtonDown">
+    <Grid Margin="34,0,62,0" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock x:Name="ExportPathTextBlock" Grid.Column="0" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" FontSize="11" Opacity="0.72"/>
+     <TextBlock x:Name="ExportDirtyIndicator" Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center" Text="●" FontSize="8" FontWeight="SemiBold" Opacity="0.82" Visibility="Collapsed" ToolTip="저장한 파일 이후 수정됨"/>
+    </Grid>
     <Button x:Name="NewNoteButton" Style="{StaticResource HeaderButtonStyle}" HorizontalAlignment="Left" ToolTip="새 노트 (Ctrl+N)" Click="New_Click">
      <Viewbox Width="16" Height="16"><Canvas Width="18" Height="18">
       <Line X1="9" Y1="3.5" X2="9" Y2="14.5" Style="{StaticResource HeaderIconLineStyle}"/>
@@ -47,18 +52,12 @@
      </Canvas></Viewbox>
     </Button>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-     <Button x:Name="SettingsButton" Style="{StaticResource HeaderButtonStyle}" ToolTip="설정" Click="Settings_Click">
+     <Button x:Name="SettingsButton" Style="{StaticResource HeaderButtonStyle}" ToolTip="메뉴" Click="Menu_Click">
       <Viewbox Width="16" Height="16" Stretch="Uniform">
        <Canvas Width="18" Height="18">
-        <Line X1="3" Y1="4" X2="6" Y2="4" Style="{StaticResource HeaderIconLineStyle}"/>
-        <Ellipse Canvas.Left="6" Canvas.Top="2" Width="4" Height="4" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2"/>
-        <Line X1="10" Y1="4" X2="15" Y2="4" Style="{StaticResource HeaderIconLineStyle}"/>
-        <Line X1="3" Y1="9" X2="10" Y2="9" Style="{StaticResource HeaderIconLineStyle}"/>
-        <Ellipse Canvas.Left="10" Canvas.Top="7" Width="4" Height="4" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2"/>
-        <Line X1="14" Y1="9" X2="15" Y2="9" Style="{StaticResource HeaderIconLineStyle}"/>
-        <Line X1="3" Y1="14" X2="7" Y2="14" Style="{StaticResource HeaderIconLineStyle}"/>
-        <Ellipse Canvas.Left="7" Canvas.Top="12" Width="4" Height="4" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2"/>
-        <Line X1="11" Y1="14" X2="15" Y2="14" Style="{StaticResource HeaderIconLineStyle}"/>
+        <Line X1="4" Y1="5" X2="14" Y2="5" Style="{StaticResource HeaderIconLineStyle}"/>
+        <Line X1="4" Y1="9" X2="14" Y2="9" Style="{StaticResource HeaderIconLineStyle}"/>
+        <Line X1="4" Y1="13" X2="14" Y2="13" Style="{StaticResource HeaderIconLineStyle}"/>
        </Canvas>
       </Viewbox>
      </Button>

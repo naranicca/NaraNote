@@ -49,6 +49,17 @@ dotnet publish src/NaraNote.App/NaraNote.App.csproj -c Release -o publish
 - HKCU 현재 사용자 시작프로그램 등록 및 실제 레지스트리 상태 동기화
 - 모니터 제거 또는 화면 밖 저장 위치의 가장 가까운 work area 보정
 
+## 현재 노트 파일 저장
+
+- `Ctrl+S` 또는 컨텍스트 메뉴의 `현재 노트 저장`으로 현재 노트를 독립 파일로 저장합니다.
+- 텍스트만 있는 노트는 기본적으로 UTF-8 `.txt`로 저장합니다.
+- 이미지, 첨부 파일 또는 드로잉이 있으면 `.naranote` 문서로 저장합니다.
+- `.naranote`는 ZIP 기반 패키지이며 `manifest.json`, `images/`, `attachments/`를 포함합니다.
+- 존재하는 이미지와 첨부 파일은 패키지 안에 복사하고, 찾을 수 없는 첨부 파일은 원본 경로 정보만 기록합니다.
+- 한 번 저장한 노트에서 `Ctrl+S`를 누르면 같은 파일을 갱신하며, `Ctrl+Shift+S`는 다른 이름으로 저장합니다.
+- 내보내기 파일도 임시 파일 작성 후 교체하는 atomic save 방식을 사용합니다.
+- 앱 시작 시 현재 사용자 범위에서 `.naranote`를 `NaraNote 문서`로 등록하고 앱 아이콘과 열기 명령을 연결합니다. 관리자 권한은 필요하지 않습니다.
+
 ## 데이터와 개인정보
 
 데이터 위치는 `%LocalAppData%\NaraNote`입니다.

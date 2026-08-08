@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Interop;
@@ -24,6 +25,7 @@ public sealed class AppController : IDisposable
     public async Task StartAsync()
     {
         State = await _store.LoadAsync();
+        foreach (var note in State.Notes) ClearMissingExportPath(note);
         var open = State.Notes.Where(n => n.IsOpen).ToList();
         if (open.Count == 0)
         {
@@ -45,10 +47,17 @@ public sealed class AppController : IDisposable
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
     public void Show(NoteData note)
     {
+        ClearMissingExportPath(note);
         note.IsOpen = true;
         NormalizePlacement(note);
         if (!_windows.TryGetValue(note.Id, out var window)) { window = new NoteWindow(note, this); _windows[note.Id] = window; }
         window.Show(); window.Activate(); window.FocusEditor(); ScheduleSave();
+    }
+    private static void ClearMissingExportPath(NoteData note)
+    {
+        if (string.IsNullOrWhiteSpace(note.ExportFilePath) || File.Exists(note.ExportFilePath)) return;
+        note.ExportFilePath = null;
+        note.IsExportDirty = false;
     }
     public void Closed(NoteData note)
     {
