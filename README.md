@@ -37,6 +37,7 @@ dotnet publish src/NaraNote.App/NaraNote.App.csproj -c Release -o publish
 - 최초 실행 시 360×320 노란 노트 생성, 상단 빈 영역 이동, 8px 네이티브 가장자리/모서리 리사이즈
 - `+`/`Ctrl+N` 새 노트, `X`는 현재 노트만 닫음
 - 텍스트, Unicode, 폰트/크기/색상 설정 및 500ms debounce 자동 저장
+- 새 노트는 Enter, `Ctrl+V`, 텍스트 파일 드롭 시 C#, C/C++, Python, Lua, JSON, XML, HTML, JavaScript, CSS, Markdown, PowerShell 구문을 자동 감지합니다. 사용자가 언어나 일반 텍스트를 직접 선택하면 자동 감지를 중단합니다.
 - `Ctrl++`, `Ctrl+-`, `Ctrl+0`; 이미지 우선 `Ctrl+V`
 - 이미지/텍스트/기타 파일 드롭, 첨부 더블클릭 실행, 누락 첨부 경고
 - 이미지와 첨부의 단일 선택·드래그 이동, 이미지 모서리 비율 리사이즈와 접근 가능 영역 제한
@@ -76,7 +77,11 @@ logs/
 
 ## NuGet 패키지
 
-런타임 애플리케이션에는 외부 NuGet 패키지가 없습니다. 테스트 프로젝트에만 다음 패키지를 사용합니다.
+런타임 애플리케이션은 다음 외부 NuGet 패키지를 사용합니다.
+
+- `AvalonEdit` 6.3.1.120: C#, C/C++, Python, Lua, JSON, XML, HTML, JavaScript, CSS, Markdown, PowerShell 구문 강조와 코드 편집을 제공합니다. Lua는 앱에 포함한 경량 XSHD 정의를 사용합니다. WPF 기본 `TextBox`는 문자 범위별 색상 표시를 지원하지 않고, `RichTextBox`로 직접 구현하면 강조용 서식 변경이 Undo/Redo와 커서 상태에 섞이므로 경량 전용 편집기를 사용합니다.
+
+테스트 프로젝트는 다음 패키지를 사용합니다.
 
 - `Microsoft.NET.Test.Sdk`: `dotnet test` 호스트. 기본 런타임에는 테스트 호스트가 없습니다.
 - `xunit`: 단위 테스트 프레임워크. .NET 기본 API에는 테스트 실행/검증 프레임워크가 없습니다.
@@ -92,6 +97,7 @@ logs/
 6. 우클릭으로 펜 모드에 들어가 선을 그리고, 기존 선 위를 빠르게 좌우 3회 이상 왕복해 삭제합니다.
 7. 트레이 표시/숨김과 마지막 노트를 닫아도 프로세스가 유지되는지 확인합니다.
 8. 보조 모니터 및 100/125/150/200% DPI에서 이동과 리사이즈 hit-test를 확인합니다.
+9. 우클릭 또는 상단 햄버거 메뉴의 `구문 강조`에서 언어를 선택하고, 강조 상태가 재실행 후 복원되는지 확인합니다.
 
 ## 현재 제한사항
 

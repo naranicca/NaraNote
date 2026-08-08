@@ -9,9 +9,9 @@ public sealed class PersistenceTests : IDisposable
     [Fact] public async Task Notes_and_elements_round_trip()
     {
         var store = new JsonAppStateStore(_root); var state = new AppState();
-        state.Notes.Add(new NoteData { Text = "hello", FontFamily = "Consolas", FontSize = 22, Elements = [new ImageElement { Caption = "caption", X = 4, Width = 99 }, new InkStrokeElement { Points = [new(1, 2)] }] });
+        state.Notes.Add(new NoteData { Text = "hello", FontFamily = "Consolas", FontSize = 22, SyntaxLanguage = "CSharp", Elements = [new ImageElement { Caption = "caption", X = 4, Width = 99 }, new InkStrokeElement { Points = [new(1, 2)] }] });
         await store.SaveAsync(state); var restored = await store.LoadAsync();
-        Assert.Equal("hello", restored.Notes[0].Text); Assert.Equal("Consolas", restored.Notes[0].FontFamily); Assert.Equal(22, restored.Notes[0].FontSize); Assert.Equal("caption", Assert.IsType<ImageElement>(restored.Notes[0].Elements[0]).Caption); Assert.Single(Assert.IsType<InkStrokeElement>(restored.Notes[0].Elements[1]).Points);
+        Assert.Equal("hello", restored.Notes[0].Text); Assert.Equal("Consolas", restored.Notes[0].FontFamily); Assert.Equal(22, restored.Notes[0].FontSize); Assert.Equal("CSharp", restored.Notes[0].SyntaxLanguage); Assert.Equal("caption", Assert.IsType<ImageElement>(restored.Notes[0].Elements[0]).Caption); Assert.Single(Assert.IsType<InkStrokeElement>(restored.Notes[0].Elements[1]).Points);
     }
     [Fact] public async Task Corrupt_primary_recovers_backup()
     {
