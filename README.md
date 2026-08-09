@@ -4,6 +4,27 @@ NaraNote is a lightweight sticky-note application for Windows. It opens directly
 
 Version 1.0 targets Windows 10 22H2 or later and Windows 11 on x64 systems. The release is distributed as one self-contained `NaraNote.exe`; the .NET runtime does not need to be installed separately.
 
+## Table of contents
+
+- [Highlights](#highlights)
+- [Notes and windows](#notes-and-windows)
+- [Editing and objects](#editing-and-objects)
+  - [Text and syntax highlighting](#text-and-syntax-highlighting)
+  - [Images](#images)
+  - [Attachments and dropped files](#attachments-and-dropped-files)
+  - [Drawing](#drawing)
+- [Reminders](#reminders)
+- [Language support](#language-support)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Saving and `.naranote` files](#saving-and-naranote-files)
+- [System tray and startup](#system-tray-and-startup)
+- [Data and privacy](#data-and-privacy)
+- [Build from source](#build-from-source)
+- [Project structure](#project-structure)
+- [NuGet packages](#nuget-packages)
+- [Current limitations](#current-limitations)
+- [License](#license)
+
 ## Highlights
 
 - Independent frameless sticky-note windows with native rounded corners and Windows shadows
