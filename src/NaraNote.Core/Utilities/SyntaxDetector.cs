@@ -29,6 +29,8 @@ public static partial class SyntaxDetector
         };
         var best = scores.OrderByDescending(pair => pair.Value).First();
         var runnerUp = scores.Values.OrderByDescending(value => value).Skip(1).First();
+        if (best.Value > 0 && runnerUp == 0)
+            return new(best.Key, Math.Min(.95, .78 + (best.Value - 1) * .06));
         if (best.Value < 3 || best.Value - runnerUp < 2) return null;
         return new(best.Key, Math.Min(.95, .55 + best.Value * .08));
     }
@@ -54,7 +56,7 @@ public static partial class SyntaxDetector
     private static readonly Regex[] PythonPatterns = [R(@"^\s*(def|class)\s+\w+.*:\s*$"), R(@"^\s*(from\s+\S+\s+)?import\s+"), R(@"^\s*(if|for|while|try|with)\b.*:\s*$"), R(@"\bself\.\w+"), R(@"^\s*print\s*\(")];
     private static readonly Regex[] LuaPatterns = [R(@"^\s*local\s+\w+"), R(@"\bfunction\s+[\w.:]+\s*\("), R(@"^\s*(if|for|while)\b.*\b(then|do)\s*$"), R(@"^\s*end\s*$"), R(@"\brequire\s*\(?\s*['""]")];
     private static readonly Regex[] HtmlPatterns = [R(@"<!doctype\s+html"), R(@"<html\b"), R(@"<(div|span|body|head|script|style)\b"), R(@"</\w+>"), R(@"\b(class|id)=['""]")];
-    private static readonly Regex[] JavaScriptPatterns = [R(@"\b(const|let|var)\s+\w+\s*="), R(@"\bfunction\s+\w*\s*\("), R(@"=>"), R(@"\bconsole\.(log|error)\s*\("), R(@"^\s*(import|export)\b")];
+    private static readonly Regex[] JavaScriptPatterns = [R(@"\b(const|let|var)\s+\w+\s*="), R(@"\bfunction\s+\w*\s*\("), R(@"=>"), R(@"\bconsole\.(log|error)\s*\("), R(@"^\s*(export\b|import\s+.+\s+from\b|import\s+['""])")];
     private static readonly Regex[] CssPatterns = [R(@"[^{}]+\{\s*$"), R(@"^\s*[\w-]+\s*:\s*[^;]+;"), R(@"#[\w-]+\s*\{"), R(@"\.[\w-]+\s*\{"), R(@"@(media|keyframes|font-face)\b")];
     private static readonly Regex[] MarkdownPatterns = [R(@"^#{1,6}\s+\S"), R(@"^\s*```"), R(@"^\s*[-*+]\s+\S"), R(@"\[[^]]+\]\([^)]+\)"), R(@"^\s*>\s+\S")];
     private static readonly Regex[] PowerShellPatterns = [R(@"\$[a-z_]\w*"), R(@"\b(Get|Set|New|Remove|Invoke|Start|Stop)-[A-Z]\w+"), R(@"^\s*param\s*\("), R(@"\|\s*(Where|ForEach|Select)-Object\b"), R(@"\$env:\w+")];

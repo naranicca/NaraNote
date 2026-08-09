@@ -10,6 +10,8 @@ public sealed class SyntaxDetectorTests
     [InlineData("<!doctype html><html><body><div class=\"note\">Hi</div></body></html>", "Html")]
     [InlineData("using System;\nnamespace Demo;\npublic sealed class App { string name = \"x\"; }", "CSharp")]
     [InlineData("#include <iostream>\nint main() { std::cout << \"hi\"; return 0; }", "Cpp")]
+    [InlineData("import os", "Python")]
+    [InlineData("import os\nimport sys", "Python")]
     [InlineData("import os\ndef greet(name):\n    if name:\n        print(name)\n", "Python")]
     [InlineData("local value = require('demo')\nfunction run()\n  if value then print(value) end\nend", "Lua")]
     [InlineData("const value = 1;\nfunction run() { console.log(value); }\nexport { run };", "JavaScript")]
