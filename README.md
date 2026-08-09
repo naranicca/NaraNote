@@ -249,4 +249,12 @@ WPF controls are never serialized. Notes, objects, images, attachments, and ink 
 
 ## License
 
-No license file is currently included. All rights are reserved unless the repository owner adds an explicit license.
+Copyright © 2026 naranicca.
+
+NaraNote is free software distributed under the **GNU General Public License,
+Version 3.0 only** (`GPL-3.0-only`). You may use, study, modify, and redistribute
+the software under the terms of that license. Modified versions distributed to
+others must also comply with GPL 3.0 and make the corresponding source code
+available as required by the license.
+
+See the [LICENSE](LICENSE) file for the complete license text.
