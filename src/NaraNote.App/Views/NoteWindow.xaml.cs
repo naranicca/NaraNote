@@ -823,7 +823,7 @@ public partial class NoteWindow : Window
                 try { var info = new FileInfo(path); if (info.Length <= 5 * 1024 * 1024) { InsertEditorText(File.ReadAllText(path)); ScheduleSyntaxDetection(path); } else MessageBox.Show(UiText.Get("LargeTextError"), "NaraNote"); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show(UiText.Get("ReadFileError"), "NaraNote"); } break;
             case DroppedFileKind.Image:
                 try { var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.UriSource = new Uri(path); bitmap.EndInit(); bitmap.Freeze(); AddBitmap(bitmap, x, y); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { MessageBox.Show(UiText.Get("OpenImageError"), "NaraNote"); } break;
-            default: AddAttachment(new() { OriginalFilePath = path, DisplayName = Path.GetFileName(path), X = x, Y = y }); break;
+            default: AddAttachment(new() { OriginalFilePath = path, DisplayName = GetAttachmentDisplayName(path), X = x, Y = y }); break;
         }
     }
     private void InsertEditorText(string text)
@@ -859,15 +859,22 @@ public partial class NoteWindow : Window
     private void AddAttachment(FileAttachmentElement element) { _history.Execute(new DelegateCommand(() => _note.Elements.Add(element), () => _note.Elements.Remove(element))); RestoreElements(); SelectObject(element); _vm.Touch(); }
     private void RenderAttachment(FileAttachmentElement element)
     {
-        var label = new TextBlock { Text = (File.Exists(element.OriginalFilePath) ? "📎 " : "⚠ ") + element.DisplayName, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
+        var exists = File.Exists(element.OriginalFilePath) || Directory.Exists(element.OriginalFilePath);
+        var prefix = !exists ? "⚠ " : Directory.Exists(element.OriginalFilePath) ? "📁 " : "📎 ";
+        var label = new TextBlock { Text = prefix + element.DisplayName, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
         var button = new Button { Content = label, Width = element.Width, Height = element.Height, Padding = new Thickness(8, 4, 8, 4), ToolTip = element.OriginalFilePath, Cursor = Cursors.SizeAll, HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch };
         button.Tag = element; Canvas.SetLeft(button, element.X); Canvas.SetTop(button, element.Y); Panel.SetZIndex(button, element.ZIndex); ObjectCanvas.Children.Add(button); AttachObjectInteraction(button, element);
         AddAttachmentHandles(button, element);
     }
     private static void OpenAttachment(FileAttachmentElement element)
     {
-        try { if (!File.Exists(element.OriginalFilePath)) { MessageBox.Show(UiText.Get("AttachmentMissing"), "NaraNote"); return; } Process.Start(new ProcessStartInfo(element.OriginalFilePath) { UseShellExecute = true }); }
+        try { if (!File.Exists(element.OriginalFilePath) && !Directory.Exists(element.OriginalFilePath)) { MessageBox.Show(UiText.Get("AttachmentMissing"), "NaraNote"); return; } Process.Start(new ProcessStartInfo(element.OriginalFilePath) { UseShellExecute = true }); }
         catch { MessageBox.Show(UiText.Get("AttachmentOpenError"), "NaraNote"); }
+    }
+    private static string GetAttachmentDisplayName(string path)
+    {
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
+        return string.IsNullOrWhiteSpace(name) ? path : name;
     }
     private void BeginCaptionEdit(ImageElement element)
     {
