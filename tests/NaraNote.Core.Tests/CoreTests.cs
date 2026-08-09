@@ -207,6 +207,9 @@ public sealed class CoreTests
     [Fact]
     public void Reminder_auto_hide_is_disabled_by_default() => Assert.False(new ReminderData().AutoHide);
 
+    [Fact]
+    public void Language_uses_system_default_until_user_selects_one() => Assert.Equal("system", new AppSettings().Language);
+
     [Theory]
     [InlineData("Ctrl+Alt+N", HotKeyModifiers.Control | HotKeyModifiers.Alt, 0x4E)]
     [InlineData("Ctrl+Shift+F12", HotKeyModifiers.Control | HotKeyModifiers.Shift, 0x7B)]

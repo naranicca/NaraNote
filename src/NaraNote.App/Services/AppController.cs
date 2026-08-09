@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using NaraNote.App.Views;
+using NaraNote.App.Localization;
 using NaraNote.Core.Models;
 using NaraNote.Core.Services;
 using NaraNote.Infrastructure.Logging;
@@ -28,6 +29,7 @@ public sealed class AppController : IDisposable
     public async Task StartAsync()
     {
         State = await _store.LoadAsync();
+        UiText.SetLanguage(State.Settings.Language);
         foreach (var note in State.Notes) ClearMissingExportPath(note);
         var open = State.Notes.Where(n => n.IsOpen).ToList();
         if (open.Count == 0)
@@ -132,7 +134,8 @@ public sealed class AppController : IDisposable
     public void ToggleAll(bool visible) { foreach (var w in _windows.Values) { if (visible) w.Show(); else w.Hide(); } }
     public void ApplySettings()
     {
-        SetupHotKeys(); SetupTray(); foreach (var window in _windows.Values) window.ApplyAppSettings();
+        UiText.SetLanguage(State.Settings.Language);
+        SetupHotKeys(); SetupTray(); foreach (var window in _windows.Values) { window.ApplyAppSettings(); window.ApplyLanguage(); }
         try
         {
             var executable = Environment.ProcessPath;
@@ -146,17 +149,17 @@ public sealed class AppController : IDisposable
     {
         _tray?.Dispose(); _tray = null; if (!State.Settings.UseSystemTray) return;
         var menu = new ContextMenuStrip();
-        menu.Items.Add("새 노트", null, (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote()));
-        var showAllItem = new ToolStripMenuItem("모두 표시");
+        menu.Items.Add(UiText.Get("NewNote"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote()));
+        var showAllItem = new ToolStripMenuItem(UiText.Get("ShowAll"));
         showAllItem.Click += (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(true));
         menu.Items.Add(showAllItem);
         menu.Opening += (_, _) => Application.Current.Dispatcher.Invoke(() =>
         {
             var hiddenCount = _windows.Values.Count(window => !window.IsVisible);
-            showAllItem.Text = hiddenCount > 0 ? $"모두 표시 ({hiddenCount}개 숨겨짐)" : "모두 표시";
+            showAllItem.Text = hiddenCount > 0 ? UiText.Format("ShowAllHidden", hiddenCount) : UiText.Get("ShowAll");
         });
-        menu.Items.Add("모두 숨기기", null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(false)));
-        menu.Items.Add("종료", null, (_, _) => Application.Current.Dispatcher.Invoke(Exit));
+        menu.Items.Add(UiText.Get("HideAll"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(false)));
+        menu.Items.Add(UiText.Get("Exit"), null, (_, _) => Application.Current.Dispatcher.Invoke(Exit));
         _appIcon ??= LoadAppIcon();
         _tray = new NotifyIcon { Icon = _appIcon, Text = "NaraNote", Visible = true, ContextMenuStrip = menu };
         _tray.DoubleClick += (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote());

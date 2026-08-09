@@ -4,6 +4,7 @@ using NaraNote.App.Services;
 using NaraNote.Infrastructure.Logging;
 using NaraNote.Infrastructure.Persistence;
 using NaraNote.Infrastructure.Startup;
+using NaraNote.App.Localization;
 
 namespace NaraNote.App;
 
@@ -14,7 +15,7 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         var logger = new FileLogger();
-        DispatcherUnhandledException += (_, args) => { logger.Error("UI", args.Exception); args.Handled = true; System.Windows.MessageBox.Show("작업을 처리하지 못했습니다. 로그를 확인해 주세요.", "NaraNote"); };
+        DispatcherUnhandledException += (_, args) => { logger.Error("UI", args.Exception); args.Handled = true; System.Windows.MessageBox.Show(UiText.Get("UnexpectedError"), "NaraNote"); };
         try
         {
             var executable = Environment.ProcessPath;

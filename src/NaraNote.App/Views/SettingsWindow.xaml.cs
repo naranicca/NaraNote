@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using NaraNote.App.ViewModels;
 using NaraNote.Core.Models;
+using NaraNote.App.Localization;
 using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using ColorConverter = System.Windows.Media.ColorConverter;
@@ -19,10 +20,20 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<Button, string> _colorButtons = [];
     private readonly Dictionary<Button, string> _penColorButtons = [];
     private static readonly string[] Palette = [AppSettings.DefaultNoteColor, "#FFCFF09E", "#FFBDEBFF", "#FFFFC4D8", "#FFFFC27A", "#FFDCC6FF", "#FFF3F3F3"];
-    private static readonly (string Name, string Value)[] PenPalette = [("검정", "#FF000000"), ("진회색", "#FF2F4F4F"), ("빨강", "#FFFF0000"), ("파랑", "#FF0000FF"), ("초록", "#FF008000"), ("주황", "#FFFFA500"), ("보라", "#FF800080")];
+    private static readonly (string NameKey, string Value)[] PenPalette = [("Black", "#FF000000"), ("DarkGray", "#FF2F4F4F"), ("Red", "#FFFF0000"), ("Blue", "#FF0000FF"), ("Green", "#FF008000"), ("Orange", "#FFFFA500"), ("Purple", "#FF800080")];
     public SettingsWindow(NoteViewModel note, AppSettings settings)
     {
-        InitializeComponent(); _note = note; _settings = settings; _color = note.Color; _penColor = settings.DefaultPenColor;
+        InitializeComponent();
+        if (UiText.Language != "ko") Width = 460;
+        _note = note; _settings = settings; _color = note.Color; _penColor = settings.DefaultPenColor;
+        foreach (var (label, value) in new[]
+        {
+            (UiText.Get("SystemDefault"), "system"), ("English", "en"), ("Français", "fr"),
+            ("Español", "es"), ("Tiếng Việt", "vi"), ("한국어", "ko")
+        }) LanguageBox.Items.Add(new ComboBoxItem { Content = label, Tag = value });
+        LanguageBox.SelectedItem = LanguageBox.Items.OfType<ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag as string, settings.Language, StringComparison.OrdinalIgnoreCase))
+            ?? LanguageBox.Items[0];
         var executable = Environment.ProcessPath; if (!string.IsNullOrWhiteSpace(executable)) { try { settings.RunAtStartup = new NaraNote.Infrastructure.Startup.StartupRegistration().IsEnabled(executable); } catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException) { } }
         var fontFamilies = Fonts.SystemFontFamilies.OrderBy(x => x.Source).ToList(); FontBox.ItemsSource = fontFamilies;
         FontBox.SelectedItem = fontFamilies.FirstOrDefault(x => string.Equals(x.Source, note.FontFamily, StringComparison.OrdinalIgnoreCase)); FontBox.Text = note.FontFamily;
@@ -42,9 +53,9 @@ public partial class SettingsWindow : Window
             button.Click += (_, _) => { _color = color; _note.Color = color; UpdateColorSelection(); };
             Colors.Children.Add(button);
         }
-        foreach (var (name, value) in PenPalette)
+        foreach (var (nameKey, value) in PenPalette)
         {
-            var button = new Button { Width = 38, Height = 30, Margin = new Thickness(2), Padding = new Thickness(0), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(value)), ToolTip = name, Style = (Style)FindResource("ColorPresetButtonStyle") };
+            var button = new Button { Width = 38, Height = 30, Margin = new Thickness(2), Padding = new Thickness(0), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(value)), ToolTip = UiText.Get(nameKey), Style = (Style)FindResource("ColorPresetButtonStyle") };
             _penColorButtons[button] = value;
             button.Click += (_, _) => { _penColor = value; UpdatePenColorSelection(); };
             PenColors.Children.Add(button);
@@ -80,7 +91,7 @@ public partial class SettingsWindow : Window
             PenThicknessTextBox.Text = value.ToString("0.#", CultureInfo.CurrentCulture);
             return true;
         }
-        if (showError) System.Windows.MessageBox.Show("펜 굵기는 1에서 10 사이의 숫자로 입력해 주세요.");
+        if (showError) System.Windows.MessageBox.Show(UiText.Get("PenThicknessError"), "NaraNote");
         PenThicknessTextBox.Text = PenThicknessSlider.Value.ToString("0.#", CultureInfo.CurrentCulture);
         return false;
     }
@@ -94,12 +105,19 @@ public partial class SettingsWindow : Window
         }
     }
     private void HotKeyEnabledBox_Changed(object sender, RoutedEventArgs e) => UpdateGlobalHotKeyEditors();
+    private void LanguageBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (LanguageBox.IsDropDownOpen) return;
+        LanguageBox.Focus();
+        LanguageBox.IsDropDownOpen = true;
+        e.Handled = true;
+    }
     private void BrowseAlarmSound_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "리마인더 알람 소리 선택",
-            Filter = "WAV 오디오 (*.wav)|*.wav",
+            Title = UiText.Get("SelectAlarmSound"),
+            Filter = UiText.Get("WavFilter"),
             CheckFileExists = true,
             Multiselect = false,
             FileName = AlarmSoundPath.Text
@@ -115,19 +133,21 @@ public partial class SettingsWindow : Window
     }
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        if ((NewNoteHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(NewNoteHotKey.Text, out _)) || (ToggleNotesHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(ToggleHotKey.Text, out _))) { System.Windows.MessageBox.Show("단축키는 Ctrl+Alt+N과 같은 형식으로 입력해 주세요."); return; }
+        if ((NewNoteHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(NewNoteHotKey.Text, out _)) || (ToggleNotesHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(ToggleHotKey.Text, out _))) { System.Windows.MessageBox.Show(UiText.Get("HotKeyError"), "NaraNote"); return; }
         if (!TryApplyPenThicknessInput(true)) return;
         var alarmSoundPath = AlarmSoundPath.Text.Trim();
         if (string.IsNullOrWhiteSpace(alarmSoundPath)) alarmSoundPath = AppSettings.DefaultReminderSoundPath;
-        if (!File.Exists(alarmSoundPath)) { System.Windows.MessageBox.Show(this, "선택한 알람 소리 파일을 찾을 수 없습니다.", "NaraNote"); return; }
+        if (!File.Exists(alarmSoundPath)) { System.Windows.MessageBox.Show(this, UiText.Get("SoundMissing"), "NaraNote"); return; }
         var selectedFont = FontBox.SelectedItem is FontFamily family ? family.Source : FontBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(selectedFont) || !Fonts.SystemFontFamilies.Any(x => string.Equals(x.Source, selectedFont, StringComparison.OrdinalIgnoreCase))) selectedFont = "Segoe UI";
-        if (!double.TryParse(SizeBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var selectedSize) || selectedSize is < 8 or > 72) { System.Windows.MessageBox.Show("글꼴 크기는 8에서 72 사이의 숫자로 입력해 주세요."); return; }
+        if (!double.TryParse(SizeBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var selectedSize) || selectedSize is < 8 or > 72) { System.Windows.MessageBox.Show(UiText.Get("FontSizeError"), "NaraNote"); return; }
         _note.FontFamily = selectedFont; _note.FontSize = selectedSize; _note.Color = _color;
         _settings.DefaultFontFamily = selectedFont; _settings.DefaultFontSize = selectedSize;
         _settings.DefaultPenColor = _penColor;
         _settings.DefaultPenThickness = PenThicknessSlider.Value;
         _settings.ReminderSoundPath = alarmSoundPath;
+        _settings.Language = (LanguageBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "system";
+        UiText.SetLanguage(_settings.Language);
         _settings.UseGlobalHotKeys = true;
         _settings.UseNewNoteHotKey = NewNoteHotKeyEnabledBox.IsChecked == true;
         _settings.UseToggleNotesHotKey = ToggleNotesHotKeyEnabledBox.IsChecked == true;

@@ -16,6 +16,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using NaraNote.App.Services;
+using NaraNote.App.Localization;
 using NaraNote.App.ViewModels;
 using NaraNote.Core.Commands;
 using NaraNote.Core.Drawing;
@@ -171,10 +172,22 @@ public partial class NoteWindow : Window
         CommandManager.InvalidateRequerySuggested();
     }
     public void ApplyAppSettings() => ApplyPenSettings();
+    public void ApplyLanguage()
+    {
+        NewNoteButton.ToolTip = UiText.Get("NewNote");
+        PinButton.ToolTip = UiText.Get(_note.IsAlwaysOnTop ? "DisableAlwaysOnTop" : "AlwaysOnTop");
+        ReminderButton.ToolTip = UiText.Get("Reminder");
+        SettingsButton.ToolTip = UiText.Get("Menu");
+        CloseNoteButton.ToolTip = UiText.Get("CloseNote");
+        ExportDirtyIndicator.ToolTip = UiText.Get("DirtyExport");
+        BuildContextMenu();
+        RefreshReminderMenu();
+        UpdateExportPathDisplay();
+    }
     public void RefreshReminderMenu()
     {
         if (_reminderMenuItem is not null)
-            _reminderMenuItem.Header = _note.Reminder.IsEnabled ? "리마인더 변경…" : "리마인더…";
+            _reminderMenuItem.Header = UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu");
         ReminderButton.Visibility = _note.Reminder.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
     }
     private void ReminderButton_ToolTipOpening(object sender, ToolTipEventArgs e)
@@ -185,11 +198,11 @@ public partial class NoteWindow : Window
     }
     private static string FormatRemainingReminderTime(TimeSpan remaining)
     {
-        if (remaining <= TimeSpan.Zero) return "곧 알림";
-        if (remaining.TotalDays >= 1) return $"{(int)remaining.TotalDays}일 {remaining.Hours}시간 {remaining.Minutes}분 남음";
-        if (remaining.TotalHours >= 1) return $"{(int)remaining.TotalHours}시간 {remaining.Minutes}분 남음";
-        if (remaining.TotalMinutes >= 1) return $"{Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes))}분 남음";
-        return $"{Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds))}초 남음";
+        if (remaining <= TimeSpan.Zero) return UiText.Get("Soon");
+        if (remaining.TotalDays >= 1) return UiText.Format("RemainingDays", (int)remaining.TotalDays, remaining.Hours, remaining.Minutes);
+        if (remaining.TotalHours >= 1) return UiText.Format("RemainingHours", (int)remaining.TotalHours, remaining.Minutes);
+        if (remaining.TotalMinutes >= 1) return UiText.Format("RemainingMinutes", Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes)));
+        return UiText.Format("RemainingSeconds", Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds)));
     }
     public void ActivateForReminder()
     {
@@ -326,7 +339,7 @@ public partial class NoteWindow : Window
         PinButton.Opacity = 1;
         PinHeadPath.Fill = _note.IsAlwaysOnTop ? headerForeground : Brushes.Transparent;
         PinIconViewbox.RenderTransform = new RotateTransform(_note.IsAlwaysOnTop ? 0 : 90);
-        PinButton.ToolTip = _note.IsAlwaysOnTop ? "항상 위 해제" : "항상 위";
+        PinButton.ToolTip = UiText.Get(_note.IsAlwaysOnTop ? "DisableAlwaysOnTop" : "AlwaysOnTop");
         ExportPathTextBlock.Foreground = headerForeground;
         ExportDirtyIndicator.Foreground = headerForeground;
         UpdateExportPathDisplay();
@@ -807,9 +820,9 @@ public partial class NoteWindow : Window
         switch (FileClassifier.Classify(path))
         {
             case DroppedFileKind.Text:
-                try { var info = new FileInfo(path); if (info.Length <= 5 * 1024 * 1024) { InsertEditorText(File.ReadAllText(path)); ScheduleSyntaxDetection(path); } else MessageBox.Show("5MB보다 큰 텍스트 파일은 삽입할 수 없습니다."); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show("파일을 읽을 수 없습니다."); } break;
+                try { var info = new FileInfo(path); if (info.Length <= 5 * 1024 * 1024) { InsertEditorText(File.ReadAllText(path)); ScheduleSyntaxDetection(path); } else MessageBox.Show(UiText.Get("LargeTextError"), "NaraNote"); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show(UiText.Get("ReadFileError"), "NaraNote"); } break;
             case DroppedFileKind.Image:
-                try { var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.UriSource = new Uri(path); bitmap.EndInit(); bitmap.Freeze(); AddBitmap(bitmap, x, y); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { MessageBox.Show("이미지를 열 수 없습니다."); } break;
+                try { var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.UriSource = new Uri(path); bitmap.EndInit(); bitmap.Freeze(); AddBitmap(bitmap, x, y); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { MessageBox.Show(UiText.Get("OpenImageError"), "NaraNote"); } break;
             default: AddAttachment(new() { OriginalFilePath = path, DisplayName = Path.GetFileName(path), X = x, Y = y }); break;
         }
     }
@@ -853,8 +866,8 @@ public partial class NoteWindow : Window
     }
     private static void OpenAttachment(FileAttachmentElement element)
     {
-        try { if (!File.Exists(element.OriginalFilePath)) { MessageBox.Show("첨부 파일을 찾을 수 없습니다."); return; } Process.Start(new ProcessStartInfo(element.OriginalFilePath) { UseShellExecute = true }); }
-        catch { MessageBox.Show("첨부 파일을 열 수 없습니다."); }
+        try { if (!File.Exists(element.OriginalFilePath)) { MessageBox.Show(UiText.Get("AttachmentMissing"), "NaraNote"); return; } Process.Start(new ProcessStartInfo(element.OriginalFilePath) { UseShellExecute = true }); }
+        catch { MessageBox.Show(UiText.Get("AttachmentOpenError"), "NaraNote"); }
     }
     private void BeginCaptionEdit(ImageElement element)
     {
@@ -1072,9 +1085,9 @@ public partial class NoteWindow : Window
         _noteContextMenu = menu;
         AddTextEditingMenus(menu);
         menu.Items.Add(new Separator());
-        var select = new MenuItem { Header = "텍스트 모드", IsCheckable = true };
-        var pen = new MenuItem { Header = "펜 모드", IsCheckable = true };
-        var erase = new MenuItem { Header = "지우개 모드", IsCheckable = true };
+        var select = new MenuItem { Header = UiText.Get("TextMode"), IsCheckable = true };
+        var pen = new MenuItem { Header = UiText.Get("PenMode"), IsCheckable = true };
+        var erase = new MenuItem { Header = UiText.Get("EraserMode"), IsCheckable = true };
         void UpdateToolModeMenu()
         {
             var hasInk = Ink.Strokes.Count > 0;
@@ -1092,12 +1105,12 @@ public partial class NoteWindow : Window
         menu.Items.Add(new Separator());
         AddSyntaxLanguageMenu(menu); AddNoteColorMenu(menu);
         menu.Items.Add(new Separator());
-        var reminder = new MenuItem { Header = _note.Reminder.IsEnabled ? "리마인더 변경…" : "리마인더…" };
+        var reminder = new MenuItem { Header = UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu") };
         _reminderMenuItem = reminder;
         reminder.Click += Reminder_Click;
         menu.Items.Add(reminder);
         menu.Items.Add(new Separator());
-        var settings = new MenuItem { Header = "설정" };
+        var settings = new MenuItem { Header = $"{UiText.Get("Settings")}..." };
         settings.Click += Settings_Click;
         menu.Items.Add(settings);
         menu.Closed += (_, _) => { menu.PlacementTarget = null; menu.Placement = PlacementMode.MousePoint; };
@@ -1118,10 +1131,10 @@ public partial class NoteWindow : Window
     }
     private void AddSyntaxLanguageMenu(ContextMenu menu)
     {
-        var syntax = new MenuItem { Header = "구문 강조" };
+        var syntax = new MenuItem { Header = UiText.Get("SyntaxHighlighting") };
         var languages = new (string Label, string Value)[]
         {
-            ("자동 감지", "Auto"), ("일반 텍스트", "PlainText"), ("C#", "CSharp"), ("C/C++", "Cpp"), ("Python", "Python"), ("Lua", "Lua"),
+            (UiText.Get("AutoDetect"), "Auto"), (UiText.Get("PlainText"), "PlainText"), ("C#", "CSharp"), ("C/C++", "Cpp"), ("Python", "Python"), ("Lua", "Lua"),
             ("JSON", "Json"), ("XML", "Xml"), ("HTML", "Html"), ("JavaScript", "JavaScript"),
             ("CSS", "Css"), ("Markdown", "Markdown"), ("PowerShell", "PowerShell")
         };
@@ -1194,24 +1207,24 @@ public partial class NoteWindow : Window
     }
     private void AddTextEditingMenus(ContextMenu menu)
     {
-        var save = new MenuItem { Header = "현재 노트 저장", InputGestureText = "Ctrl+S" };
+        var save = new MenuItem { Header = $"{UiText.Get("SaveNote")}...", InputGestureText = "Ctrl+S" };
         save.Click += (_, _) => _ = ExportCurrentNoteAsync(false);
         menu.Items.Add(save);
-        var saveAs = new MenuItem { Header = "다른 이름으로 저장", InputGestureText = "Ctrl+Shift+S" };
+        var saveAs = new MenuItem { Header = $"{UiText.Get("SaveAs")}...", InputGestureText = "Ctrl+Shift+S" };
         saveAs.Click += (_, _) => _ = ExportCurrentNoteAsync(true);
         menu.Items.Add(saveAs);
-        var hideNote = new MenuItem { Header = "노트 숨기기" };
+        var hideNote = new MenuItem { Header = UiText.Get("HideNote") };
         hideNote.Click += (_, _) => HideCurrentNote();
         menu.Items.Add(hideNote);
         menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = "실행 취소", Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
-        menu.Items.Add(new MenuItem { Header = "다시 실행", Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Undo"), Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Redo"), Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
         menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = "잘라내기", Command = ApplicationCommands.Cut, CommandTarget = Editor, InputGestureText = "Ctrl+X" });
-        menu.Items.Add(new MenuItem { Header = "복사", Command = ApplicationCommands.Copy, CommandTarget = Editor, InputGestureText = "Ctrl+C" });
-        menu.Items.Add(new MenuItem { Header = "붙여넣기", Command = ApplicationCommands.Paste, CommandTarget = Editor, InputGestureText = "Ctrl+V" });
-        menu.Items.Add(new MenuItem { Header = "삭제", Command = ApplicationCommands.Delete, CommandTarget = Editor, InputGestureText = "Delete" });
-        menu.Items.Add(new MenuItem { Header = "전체 선택", Command = ApplicationCommands.SelectAll, CommandTarget = Editor, InputGestureText = "Ctrl+A" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Cut"), Command = ApplicationCommands.Cut, CommandTarget = Editor, InputGestureText = "Ctrl+X" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Copy"), Command = ApplicationCommands.Copy, CommandTarget = Editor, InputGestureText = "Ctrl+C" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Paste"), Command = ApplicationCommands.Paste, CommandTarget = Editor, InputGestureText = "Ctrl+V" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Delete"), Command = ApplicationCommands.Delete, CommandTarget = Editor, InputGestureText = "Delete" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("SelectAll"), Command = ApplicationCommands.SelectAll, CommandTarget = Editor, InputGestureText = "Ctrl+A" });
     }
     private void HideCurrentNote()
     {
@@ -1235,13 +1248,13 @@ public partial class NoteWindow : Window
                 {
                     var dialog = new SaveFileDialog
                     {
-                        Title = "현재 노트 저장",
+                        Title = UiText.Get("SaveDialogTitle"),
                         AddExtension = true,
                         OverwritePrompt = true,
                         DefaultExt = rich ? ".naranote" : ".txt",
                         Filter = rich
-                            ? "NaraNote 문서 (*.naranote)|*.naranote|텍스트 파일 (*.txt)|*.txt"
-                            : "텍스트 파일 (*.txt)|*.txt|NaraNote 문서 (*.naranote)|*.naranote",
+                            ? UiText.Get("NaraNoteFilter")
+                            : UiText.Get("TextFilter"),
                         FilterIndex = 1,
                         FileName = CreateSuggestedExportName(snapshot.Text)
                     };
@@ -1251,8 +1264,7 @@ public partial class NoteWindow : Window
                 if (string.IsNullOrWhiteSpace(path)) return;
                 if (!rich || string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase)) break;
                 var result = MessageBox.Show(
-                    "이 형식으로 저장하면 텍스트만 저장되며 드로잉, 이미지 및 첨부 개체는 파일에 포함되지 않습니다.\n\n계속 저장하시겠습니까?",
-                    "개체가 제외됩니다", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+                    UiText.Get("LossWarning"), UiText.Get("ObjectsExcluded"), MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
                 if (result == MessageBoxResult.Yes) break;
                 if (!showDialog) return;
                 path = null;
@@ -1264,7 +1276,7 @@ public partial class NoteWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or InvalidDataException)
         {
-            MessageBox.Show("현재 노트를 파일로 저장하지 못했습니다. 저장 위치와 파일 접근 권한을 확인해 주세요.", "NaraNote");
+            MessageBox.Show(UiText.Get("SaveError"), "NaraNote");
         }
     }
     private NoteData CreateExportSnapshot()
@@ -1300,7 +1312,7 @@ public partial class NoteWindow : Window
         if (ExportPathTextBlock is null) return;
         var path = _note.ExportFilePath;
         ExportPathTextBlock.Text = string.IsNullOrWhiteSpace(path) ? "" : CompactExportPath(path);
-        ExportPathTextBlock.ToolTip = string.IsNullOrWhiteSpace(path) ? null : _note.IsExportDirty ? $"{path}\n저장한 파일 이후 수정됨" : path;
+        ExportPathTextBlock.ToolTip = string.IsNullOrWhiteSpace(path) ? null : _note.IsExportDirty ? $"{path}\n{UiText.Get("DirtyExport")}" : path;
         ExportPathTextBlock.Visibility = string.IsNullOrWhiteSpace(path) ? Visibility.Collapsed : Visibility.Visible;
         ExportDirtyIndicator.Visibility = !string.IsNullOrWhiteSpace(path) && _note.IsExportDirty ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -1352,9 +1364,7 @@ public partial class NoteWindow : Window
         try
         {
             var answer = MessageBox.Show(this,
-                _note.IsExportDirty
-                    ? "연결된 파일이 외부에서 변경되었습니다.\n\n다시 로드하면 현재 노트의 저장되지 않은 변경 내용이 대체됩니다. 다시 로드하시겠습니까?"
-                    : "연결된 파일이 외부에서 변경되었습니다. 다시 로드하시겠습니까?",
+                UiText.Get(_note.IsExportDirty ? "ExternalChangedDirty" : "ExternalChanged"),
                 "NaraNote", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
             if (answer != MessageBoxResult.Yes) return;
             var assetDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaraNote", "external-cache", _note.Id.ToString("N"));
@@ -1386,7 +1396,7 @@ public partial class NoteWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or JsonException)
         {
-            MessageBox.Show(this, "변경된 파일을 다시 불러오지 못했습니다. 파일 형식과 접근 권한을 확인해 주세요.", "NaraNote", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, UiText.Get("ReloadError"), "NaraNote", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally { _checkingExternalFile = false; }
     }
@@ -1429,11 +1439,11 @@ public partial class NoteWindow : Window
     }
     private void AddNoteColorMenu(ContextMenu menu)
     {
-        var colorMenu = new MenuItem { Header = "노트 색상" };
+        var colorMenu = new MenuItem { Header = UiText.Get("NoteColor") };
         var presets = new[]
         {
-            ("노랑", AppSettings.DefaultNoteColor), ("연두", "#FFCFF09E"), ("하늘색", "#FFBDEBFF"),
-            ("분홍", "#FFFFC4D8"), ("주황", "#FFFFC27A"), ("연보라", "#FFDCC6FF"), ("연회색", "#FFF3F3F3")
+            (UiText.Get("Yellow"), AppSettings.DefaultNoteColor), (UiText.Get("LightGreen"), "#FFCFF09E"), (UiText.Get("SkyBlue"), "#FFBDEBFF"),
+            (UiText.Get("Pink"), "#FFFFC4D8"), (UiText.Get("Orange"), "#FFFFC27A"), (UiText.Get("LightPurple"), "#FFDCC6FF"), (UiText.Get("LightGray"), "#FFF3F3F3")
         };
         foreach (var (name, value) in presets)
         {
@@ -1451,15 +1461,15 @@ public partial class NoteWindow : Window
     }
     private void AddPenMenus(ContextMenu menu)
     {
-        var colors = new MenuItem { Header = "펜 색상" };
-        foreach (var (name, value) in new[] { ("검정", Colors.Black), ("진회색", Colors.DarkSlateGray), ("빨강", Colors.Red), ("파랑", Colors.Blue), ("초록", Colors.Green), ("주황", Colors.Orange), ("보라", Colors.Purple) })
+        var colors = new MenuItem { Header = UiText.Get("PenColor") };
+        foreach (var (name, value) in new[] { (UiText.Get("Black"), Colors.Black), (UiText.Get("DarkGray"), Colors.DarkSlateGray), (UiText.Get("Red"), Colors.Red), (UiText.Get("Blue"), Colors.Blue), (UiText.Get("Green"), Colors.Green), (UiText.Get("Orange"), Colors.Orange), (UiText.Get("Purple"), Colors.Purple) })
         {
             var swatch = new System.Windows.Controls.Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(2), BorderBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0)), BorderThickness = new Thickness(1), Background = new SolidColorBrush(value) };
             var item = new MenuItem { Header = name, Icon = swatch, IsCheckable = true, IsChecked = Ink.DefaultDrawingAttributes.Color == value };
             item.Click += (_, _) => { Ink.DefaultDrawingAttributes.Color = value; _controller.State.Settings.DefaultPenColor = value.ToString(); _controller.ScheduleSave(); foreach (MenuItem sibling in colors.Items) sibling.IsChecked = ReferenceEquals(sibling, item); }; colors.Items.Add(item);
         }
-        var widths = new MenuItem { Header = "펜 굵기" };
-        foreach (var (name, value) in new[] { ("매우 가늘게", 1d), ("가늘게", 2d), ("보통", DefaultPenThickness), ("굵게", 6d), ("매우 굵게", 10d) })
+        var widths = new MenuItem { Header = UiText.Get("PenThickness") };
+        foreach (var (name, value) in new[] { (UiText.Get("VeryThin"), 1d), (UiText.Get("Thin"), 2d), (UiText.Get("Normal"), DefaultPenThickness), (UiText.Get("Thick"), 6d), (UiText.Get("VeryThick"), 10d) })
         {
             var item = new MenuItem { Header = name, Tag = value, IsCheckable = true, IsChecked = Math.Abs(Ink.DefaultDrawingAttributes.Width - value) < .01 };
             item.Click += (_, _) => { SetPenThickness(value); foreach (MenuItem sibling in widths.Items) sibling.IsChecked = ReferenceEquals(sibling, item); }; widths.Items.Add(item);

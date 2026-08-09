@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using NaraNote.Core.Models;
+using NaraNote.App.Localization;
 using MessageBox = System.Windows.MessageBox;
 
 namespace NaraNote.App.Views;
@@ -15,6 +16,7 @@ public partial class ReminderWindow : Window
     public ReminderWindow(ReminderData current)
     {
         InitializeComponent();
+        if (UiText.Language != "ko") Width = 480;
         var initial = current.IsEnabled ? current.NextDueUtc.ToLocalTime() : DateTimeOffset.Now;
         ReminderCalendar.DisplayDateStart = DateTime.Today;
         ReminderCalendar.SelectedDate = initial.Date;
@@ -23,7 +25,7 @@ public partial class ReminderWindow : Window
         AmPmBox.SelectedIndex = initial.Hour < 12 ? 0 : 1;
         AmPmBox.Visibility = current.Use24HourFormat ? Visibility.Collapsed : Visibility.Visible;
         PopulateTimeChoices(current.Use24HourFormat);
-        HourBox.ToolTip = current.Use24HourFormat ? "시 (0~23)" : "시 (1~12)";
+        HourBox.ToolTip = UiText.Get(current.Use24HourFormat ? "Hour023" : "Hour112");
         HourBox.Text = current.Use24HourFormat
             ? initial.Hour.ToString("00", CultureInfo.CurrentCulture)
             : (initial.Hour % 12 == 0 ? 12 : initial.Hour % 12).ToString(CultureInfo.CurrentCulture);
@@ -47,7 +49,7 @@ public partial class ReminderWindow : Window
             PopulateTimeChoices(true);
             HourBox.Text = Math.Clamp(hour, 0, 23).ToString("00", CultureInfo.CurrentCulture);
             AmPmBox.Visibility = Visibility.Collapsed;
-            HourBox.ToolTip = "시 (0~23)";
+            HourBox.ToolTip = UiText.Get("Hour023");
         }
         else
         {
@@ -56,7 +58,7 @@ public partial class ReminderWindow : Window
             PopulateTimeChoices(false);
             HourBox.Text = (hour % 12 == 0 ? 12 : hour % 12).ToString(CultureInfo.CurrentCulture);
             AmPmBox.Visibility = Visibility.Visible;
-            HourBox.ToolTip = "시 (1~12)";
+            HourBox.ToolTip = UiText.Get("Hour112");
         }
     }
     private void PopulateTimeChoices(bool use24Hour)
@@ -87,7 +89,7 @@ public partial class ReminderWindow : Window
             !int.TryParse(HourBox.Text.Trim(), NumberStyles.None, CultureInfo.CurrentCulture, out var hour) ||
             (use24Hour ? hour is < 0 or > 23 : hour is < 1 or > 12) ||
             !int.TryParse(MinuteBox.Text.Trim(), NumberStyles.None, CultureInfo.CurrentCulture, out var minute) || minute is < 0 or > 59)
-        { MessageBox.Show(this, use24Hour ? "시는 0~23, 분은 0~59 사이로 입력해 주세요." : "시는 1~12, 분은 0~59 사이로 입력해 주세요.", "NaraNote"); return; }
+        { MessageBox.Show(this, UiText.Get(use24Hour ? "TimeError24" : "TimeError12"), "NaraNote"); return; }
         var hour24 = use24Hour ? hour : hour % 12 + (AmPmBox.SelectedIndex == 1 ? 12 : 0);
         var time = new TimeSpan(hour24, minute, 0);
         var local = DateTime.SpecifyKind(date.Date + time, DateTimeKind.Local);
@@ -96,7 +98,7 @@ public partial class ReminderWindow : Window
         var days = GetSelectedDays();
         if (recurrence == ReminderRecurrence.Weekly) days = [due.DayOfWeek];
         if (recurrence == ReminderRecurrence.SelectedWeekdays && days.Count == 0)
-        { MessageBox.Show(this, "반복할 요일을 하나 이상 선택해 주세요.", "NaraNote"); return; }
+        { MessageBox.Show(this, UiText.Get("WeekdayError"), "NaraNote"); return; }
         Result = new ReminderData { IsEnabled = true, AutoHide = AutoHideCheck.IsChecked == true, NextDueUtc = due.ToUniversalTime(), Recurrence = recurrence, TimeOfDay = time, Use24HourFormat = use24Hour, DaysOfWeek = days };
         DialogResult = true;
     }

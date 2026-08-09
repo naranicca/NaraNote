@@ -20,6 +20,7 @@ public sealed class AppSettings
     public string DefaultPenColor { get; set; } = "#FF222222";
     public double DefaultPenThickness { get; set; } = 3.5;
     public string ReminderSoundPath { get; set; } = DefaultReminderSoundPath;
+    public string Language { get; set; } = "system";
     public bool UseGlobalHotKeys { get; set; } = true;
     public bool UseNewNoteHotKey { get; set; } = true;
     public bool UseToggleNotesHotKey { get; set; } = true;
