@@ -235,6 +235,37 @@ public sealed class CoreTests
         Assert.True(result.IsScribble); Assert.Contains(target.Id, result.TargetStrokeIds);
     }
 
+    [Fact] public void Stroke_inside_scribble_region_is_targeted_without_touching_scribble_path()
+    {
+        var enclosed = new InkStrokeElement { Points = [new(20, 15), new(60, 15)] };
+        var result = new ScribbleRecognizer().Analyze(ZigZag(), [enclosed]);
+        Assert.True(result.IsScribble); Assert.Contains(enclosed.Id, result.TargetStrokeIds);
+    }
+
+    [Fact] public void Stroke_crossing_scribble_region_is_targeted()
+    {
+        var crossing = new InkStrokeElement { Points = [new(45, -30), new(45, 40)] };
+        var result = new ScribbleRecognizer().Analyze(ZigZag(), [crossing]);
+        Assert.True(result.IsScribble); Assert.Contains(crossing.Id, result.TargetStrokeIds);
+    }
+
+    [Fact] public void Scribble_region_follows_its_shape_instead_of_axis_aligned_bounds()
+    {
+        List<InkPointData> diagonalScribble =
+        [
+            new(0, 0, .5f, 0), new(90, 35, .5f, 80), new(5, 3, .5f, 160), new(95, 38, .5f, 240),
+            new(4, 6, .5f, 320), new(100, 41, .5f, 400), new(2, 9, .5f, 480), new(85, 44, .5f, 560)
+        ];
+        var inside = new InkStrokeElement { Points = [new(45, 19), new(55, 23)] };
+        var emptyBoundingCorner = new InkStrokeElement { Points = [new(5, 35), new(15, 35)] };
+
+        var result = new ScribbleRecognizer().Analyze(diagonalScribble, [inside, emptyBoundingCorner]);
+
+        Assert.True(result.IsScribble);
+        Assert.Contains(inside.Id, result.TargetStrokeIds);
+        Assert.DoesNotContain(emptyBoundingCorner.Id, result.TargetStrokeIds);
+    }
+
     [Fact] public void Straight_line_is_not_scribble()
     {
         var points = Enumerable.Range(0, 20).Select(i => new InkPointData(i * 5, 10, .5f, i * 10)).ToList();
