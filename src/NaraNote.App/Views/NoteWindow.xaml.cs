@@ -48,7 +48,7 @@ namespace NaraNote.App.Views;
 
 public partial class NoteWindow : Window
 {
-    private const int WmNcHitTest = 0x0084, WmImeStartComposition = 0x010D, WmImeEndComposition = 0x010E, WmImeComposition = 0x010F, Grip = 16;
+    private const int WmKillFocus = 0x0008, WmNcHitTest = 0x0084, WmImeStartComposition = 0x010D, WmImeEndComposition = 0x010E, WmImeComposition = 0x010F, Grip = 16;
     private const int GcsCompStr = 0x0008, GcsResultStr = 0x0800, CfsForcePosition = 0x0020;
     private const int NiCompositionStr = 0x0015, CpsCancel = 0x0004;
     private const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34;
@@ -307,7 +307,7 @@ public partial class NoteWindow : Window
 
     private void Editor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
-        EndImeComposition();
+        CommitImeComposition();
         Editor.TextArea.Caret.Hide();
     }
 
@@ -393,7 +393,7 @@ public partial class NoteWindow : Window
     protected override void OnClosing(CancelEventArgs e)
     {
         StopReminderAnimation(false);
-        CommitImeCompositionBeforeClose();
+        CommitImeComposition();
         _note.IsOpen = false;
         base.OnClosing(e);
     }
@@ -1228,7 +1228,7 @@ public partial class NoteWindow : Window
     }
     private void HideCurrentNote()
     {
-        CommitImeCompositionBeforeClose();
+        CommitImeComposition();
         _controller.ScheduleSave();
         Hide();
     }
@@ -1494,6 +1494,10 @@ public partial class NoteWindow : Window
     }
     private IntPtr ImeWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // Commit pre-edit text before Windows releases the IME context. Waiting for
+        // WPF's LostKeyboardFocus event can be too late when the whole note window
+        // is deactivated, which would otherwise discard the composing syllable.
+        if (msg == WmKillFocus) CommitImeComposition(hwnd);
         if (_reminderAnimationActive && msg is WmImeStartComposition or WmImeComposition)
         {
             var context = ImmGetContext(hwnd);
@@ -1533,10 +1537,10 @@ public partial class NoteWindow : Window
             if (Editor.TextArea.IsKeyboardFocused) Editor.TextArea.Caret.Show();
         }));
     }
-    private void CommitImeCompositionBeforeClose()
+    private void CommitImeComposition(IntPtr hwnd = default)
     {
         if (!_imeCompositionActive) return;
-        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) { EndImeComposition(); return; }
         var context = ImmGetContext(hwnd);
         if (context == IntPtr.Zero) { EndImeComposition(); return; }
