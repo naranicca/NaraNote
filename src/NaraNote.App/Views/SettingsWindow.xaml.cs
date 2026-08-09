@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Globalization;
+using System.IO;
 using NaraNote.App.ViewModels;
 using NaraNote.Core.Models;
 using Button = System.Windows.Controls.Button;
@@ -28,6 +29,7 @@ public partial class SettingsWindow : Window
         SizeBox.ItemsSource = new[] { 8d, 9d, 10d, 11d, 12d, 14d, 16d, 18d, 20d, 22d, 24d, 28d, 32d, 36d, 48d, 60d, 72d };
         PenThicknessSlider.Value = Math.Clamp(settings.DefaultPenThickness, 1d, 10d);
         PenThicknessTextBox.Text = PenThicknessSlider.Value.ToString("0.#", CultureInfo.CurrentCulture);
+        AlarmSoundPath.Text = string.IsNullOrWhiteSpace(settings.ReminderSoundPath) ? AppSettings.DefaultReminderSoundPath : settings.ReminderSoundPath;
         SizeBox.Text = note.FontSize.ToString("0.#", CultureInfo.CurrentCulture); TrayBox.IsChecked = settings.UseSystemTray; StartupBox.IsChecked = settings.RunAtStartup;
         NewNoteHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseNewNoteHotKey;
         ToggleNotesHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseToggleNotesHotKey;
@@ -92,6 +94,19 @@ public partial class SettingsWindow : Window
         }
     }
     private void HotKeyEnabledBox_Changed(object sender, RoutedEventArgs e) => UpdateGlobalHotKeyEditors();
+    private void BrowseAlarmSound_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "리마인더 알람 소리 선택",
+            Filter = "WAV 오디오 (*.wav)|*.wav",
+            CheckFileExists = true,
+            Multiselect = false,
+            FileName = AlarmSoundPath.Text
+        };
+        if (dialog.ShowDialog(this) == true) AlarmSoundPath.Text = dialog.FileName;
+    }
+    private void ResetAlarmSound_Click(object sender, RoutedEventArgs e) => AlarmSoundPath.Text = AppSettings.DefaultReminderSoundPath;
     private void UpdateGlobalHotKeyEditors()
     {
         if (NewNoteHotKey is null || ToggleHotKey is null) return;
@@ -102,6 +117,9 @@ public partial class SettingsWindow : Window
     {
         if ((NewNoteHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(NewNoteHotKey.Text, out _)) || (ToggleNotesHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(ToggleHotKey.Text, out _))) { System.Windows.MessageBox.Show("단축키는 Ctrl+Alt+N과 같은 형식으로 입력해 주세요."); return; }
         if (!TryApplyPenThicknessInput(true)) return;
+        var alarmSoundPath = AlarmSoundPath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(alarmSoundPath)) alarmSoundPath = AppSettings.DefaultReminderSoundPath;
+        if (!File.Exists(alarmSoundPath)) { System.Windows.MessageBox.Show(this, "선택한 알람 소리 파일을 찾을 수 없습니다.", "NaraNote"); return; }
         var selectedFont = FontBox.SelectedItem is FontFamily family ? family.Source : FontBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(selectedFont) || !Fonts.SystemFontFamilies.Any(x => string.Equals(x.Source, selectedFont, StringComparison.OrdinalIgnoreCase))) selectedFont = "Segoe UI";
         if (!double.TryParse(SizeBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var selectedSize) || selectedSize is < 8 or > 72) { System.Windows.MessageBox.Show("글꼴 크기는 8에서 72 사이의 숫자로 입력해 주세요."); return; }
@@ -109,6 +127,7 @@ public partial class SettingsWindow : Window
         _settings.DefaultFontFamily = selectedFont; _settings.DefaultFontSize = selectedSize;
         _settings.DefaultPenColor = _penColor;
         _settings.DefaultPenThickness = PenThicknessSlider.Value;
+        _settings.ReminderSoundPath = alarmSoundPath;
         _settings.UseGlobalHotKeys = true;
         _settings.UseNewNoteHotKey = NewNoteHotKeyEnabledBox.IsChecked == true;
         _settings.UseToggleNotesHotKey = ToggleNotesHotKeyEnabledBox.IsChecked == true;

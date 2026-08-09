@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Media;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -93,6 +94,7 @@ public partial class NoteWindow : Window
     private bool _reminderAnimationActive;
     private double _reminderOriginalLeft;
     private DispatcherTimer? _reminderFocusTimer;
+    private SoundPlayer? _reminderSoundPlayer;
     public NoteWindow(NoteData note, AppController controller)
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
@@ -205,6 +207,7 @@ public partial class NoteWindow : Window
         _reminderFocusTimer.Tick -= ReminderFocusTimer_Tick;
         _reminderFocusTimer.Tick += ReminderFocusTimer_Tick;
         _reminderFocusTimer.Start();
+        StartReminderSound();
         var rotation = new RotateTransform();
         Frame.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
         Frame.RenderTransform = rotation;
@@ -222,6 +225,30 @@ public partial class NoteWindow : Window
         BeginAnimation(LeftProperty, windowShake, HandoffBehavior.SnapshotAndReplace);
     }
     private void ReminderFocusTimer_Tick(object? sender, EventArgs e) => ForceReminderFocus();
+    private void StartReminderSound()
+    {
+        StopReminderSound();
+        var path = _controller.State.Settings.ReminderSoundPath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        try
+        {
+            _reminderSoundPlayer = new SoundPlayer(path);
+            _reminderSoundPlayer.PlayLooping();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            _controller.LogError("ReminderSound", ex);
+            StopReminderSound();
+        }
+    }
+    private void StopReminderSound()
+    {
+        if (_reminderSoundPlayer is null) return;
+        try { _reminderSoundPlayer.Stop(); }
+        catch (Exception ex) when (ex is InvalidOperationException) { _controller.LogError("ReminderSound", ex); }
+        _reminderSoundPlayer.Dispose();
+        _reminderSoundPlayer = null;
+    }
     private void ForceReminderFocus()
     {
         if (!_reminderAnimationActive) return;
@@ -259,6 +286,7 @@ public partial class NoteWindow : Window
         Frame.RenderTransform = Transform.Identity;
         _reminderAnimationActive = false;
         _reminderFocusTimer?.Stop();
+        StopReminderSound();
         Topmost = _note.IsAlwaysOnTop;
     }
 
@@ -1076,9 +1104,11 @@ public partial class NoteWindow : Window
     private void Reminder_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new ReminderWindow(_note.Reminder) { Owner = this };
-        if (dialog.ShowDialog() != true) return;
-        _note.Reminder = dialog.Result;
+        var accepted = dialog.ShowDialog() == true;
+        if (accepted) _note.Reminder = dialog.Result;
+        else _note.Reminder.Use24HourFormat = dialog.Use24HourFormat;
         _controller.ScheduleSave();
+        if (!accepted) return;
         RefreshReminderMenu();
         _controller.CheckRemindersNow();
     }

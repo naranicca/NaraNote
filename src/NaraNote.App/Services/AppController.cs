@@ -23,6 +23,7 @@ public sealed class AppController : IDisposable
     private DispatcherTimer? _reminderTimer;
     public AppState State { get; private set; } = new();
     public AppController(IAppStateStore store, FileLogger logger) { _store = store; _logger = logger; }
+    public void LogError(string area, Exception exception) => _logger.Error(area, exception);
 
     public async Task StartAsync()
     {

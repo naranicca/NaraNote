@@ -193,6 +193,13 @@
    <Separator Margin="0,16"/><TextBlock Text="전체 설정" FontWeight="Bold" FontSize="16"/>
    <CheckBox x:Name="TrayBox" Content="시스템 트레이 사용" Height="26" Margin="0,8,0,0"/>
    <CheckBox x:Name="StartupBox" Content="Windows 시작 시 실행" Height="26" Margin="0,8,0,0"/>
+   <TextBlock Text="리마인더 알람 소리" Margin="0,10,0,4"/>
+   <Grid Height="29">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="54"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+    <TextBox x:Name="AlarmSoundPath" Grid.Column="0" Padding="6,2" VerticalContentAlignment="Center" ToolTip="리마인더 WAV 파일 경로"/>
+    <Button Grid.Column="1" Content="찾기…" Margin="5,0,0,0" Padding="4,2" Click="BrowseAlarmSound_Click"/>
+    <Button Grid.Column="2" Content="기본" Margin="5,0,0,0" Padding="4,2" Click="ResetAlarmSound_Click"/>
+   </Grid>
    <Grid Height="26" Margin="0,8,0,0">
     <Grid.ColumnDefinitions>
      <ColumnDefinition Width="*"/>

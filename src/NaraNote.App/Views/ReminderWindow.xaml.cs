@@ -10,6 +10,7 @@ public partial class ReminderWindow : Window
 {
     private bool _initializing = true;
     public ReminderData Result { get; private set; }
+    public bool Use24HourFormat => Use24HourCheck.IsChecked == true;
 
     public ReminderWindow(ReminderData current)
     {
@@ -99,7 +100,7 @@ public partial class ReminderWindow : Window
         DialogResult = true;
     }
 
-    private void Disable_Click(object sender, RoutedEventArgs e) { Result = new ReminderData(); DialogResult = true; }
+    private void Disable_Click(object sender, RoutedEventArgs e) { Result = new ReminderData { Use24HourFormat = Use24HourFormat }; DialogResult = true; }
     private List<DayOfWeek> GetSelectedDays() => Enum.GetValues<DayOfWeek>().Where(day => IsDayChecked(day)).ToList();
     private bool IsDayChecked(DayOfWeek day) => GetDay(day).IsChecked == true;
     private void SetDay(DayOfWeek day, bool value) => GetDay(day).IsChecked = value;

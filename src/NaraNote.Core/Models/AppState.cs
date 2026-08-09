@@ -13,11 +13,13 @@ public sealed class AppSettings
 {
     public const string DefaultNoteColor = "#FFF3A6";
     public const string LegacyDefaultNoteColor = "#FFFF88";
+    public const string DefaultReminderSoundPath = @"C:\Windows\Media\Alarm01.wav";
     public string DefaultFontFamily { get; set; } = "Segoe UI";
     public double DefaultFontSize { get; set; } = 16;
     public string DefaultColor { get; set; } = DefaultNoteColor;
     public string DefaultPenColor { get; set; } = "#FF222222";
     public double DefaultPenThickness { get; set; } = 3.5;
+    public string ReminderSoundPath { get; set; } = DefaultReminderSoundPath;
     public bool UseGlobalHotKeys { get; set; } = true;
     public bool UseNewNoteHotKey { get; set; } = true;
     public bool UseToggleNotesHotKey { get; set; } = true;
