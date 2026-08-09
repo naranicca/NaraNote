@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -81,6 +82,11 @@ public partial class NoteWindow : Window
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
     private bool _imeCompositionActive;
     private HwndSource? _imeHwndSource;
+    private DateTime _observedExportWriteUtc;
+    private long _observedExportLength = -1;
+    private bool _hasObservedExportVersion;
+    private bool _observedExportExists;
+    private bool _checkingExternalFile;
     public NoteWindow(NoteData note, AppController controller)
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
@@ -127,10 +133,11 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
         LocationChanged += (_, _) => { _note.Left = Left; _note.Top = Top; _vm.Touch(); };
         SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateExportPathDisplay(); _vm.Touch(); };
-        Activated += (_, _) => _controller.NoteActivated(_note);
+        Activated += NoteWindow_Activated;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
         Deactivated += (_, _) => { ResetShiftLineMode(); FinishStylusWindowDrag(); };
+        RememberExportFileVersion();
         _loading = false;
     }
     public void FocusEditor()
@@ -1085,6 +1092,7 @@ public partial class NoteWindow : Window
             }
             await _documentExporter.ExportAsync(snapshot, path);
             _vm.MarkExported(path);
+            RememberExportFileVersion();
             UpdateExportPathDisplay();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or InvalidDataException)
@@ -1128,6 +1136,92 @@ public partial class NoteWindow : Window
         ExportPathTextBlock.ToolTip = string.IsNullOrWhiteSpace(path) ? null : _note.IsExportDirty ? $"{path}\n저장한 파일 이후 수정됨" : path;
         ExportPathTextBlock.Visibility = string.IsNullOrWhiteSpace(path) ? Visibility.Collapsed : Visibility.Visible;
         ExportDirtyIndicator.Visibility = !string.IsNullOrWhiteSpace(path) && _note.IsExportDirty ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private async void NoteWindow_Activated(object? sender, EventArgs e)
+    {
+        _controller.NoteActivated(_note);
+        await CheckForExternalFileChangeAsync();
+    }
+    private void RememberExportFileVersion()
+    {
+        var path = _note.ExportFilePath;
+        _hasObservedExportVersion = !string.IsNullOrWhiteSpace(path);
+        _observedExportExists = _hasObservedExportVersion && File.Exists(path);
+        if (!_observedExportExists) { _observedExportWriteUtc = default; _observedExportLength = -1; return; }
+        var info = new FileInfo(path!);
+        _observedExportWriteUtc = info.LastWriteTimeUtc;
+        _observedExportLength = info.Length;
+    }
+    private async Task CheckForExternalFileChangeAsync()
+    {
+        if (_checkingExternalFile) return;
+        var path = _note.ExportFilePath;
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var exists = File.Exists(path);
+        if (!_hasObservedExportVersion) { RememberExportFileVersion(); return; }
+        if (!exists)
+        {
+            if (!_observedExportExists) return;
+            _observedExportExists = false;
+            _observedExportWriteUtc = default;
+            _observedExportLength = -1;
+            _note.ExportFilePath = null;
+            _note.IsExportDirty = false;
+            _hasObservedExportVersion = false;
+            UpdateExportPathDisplay();
+            _controller.ScheduleSave();
+            return;
+        }
+        FileInfo info;
+        try { info = new FileInfo(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return; }
+        var reappeared = !_observedExportExists;
+        if (!reappeared && info.LastWriteTimeUtc == _observedExportWriteUtc && info.Length == _observedExportLength) return;
+
+        _checkingExternalFile = true;
+        _observedExportExists = true;
+        _observedExportWriteUtc = info.LastWriteTimeUtc;
+        _observedExportLength = info.Length;
+        try
+        {
+            var answer = MessageBox.Show(this,
+                _note.IsExportDirty
+                    ? "연결된 파일이 외부에서 변경되었습니다.\n\n다시 로드하면 현재 노트의 저장되지 않은 변경 내용이 대체됩니다. 다시 로드하시겠습니까?"
+                    : "연결된 파일이 외부에서 변경되었습니다. 다시 로드하시겠습니까?",
+                "NaraNote", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
+            if (answer != MessageBoxResult.Yes) return;
+            var assetDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NaraNote", "external-cache", _note.Id.ToString("N"));
+            var imported = await _documentExporter.ImportAsync(path, assetDirectory);
+            _loading = true;
+            try
+            {
+                _note.Text = imported.Text;
+                if (string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase))
+                {
+                    _note.SyntaxLanguage = imported.SyntaxLanguage;
+                    _note.IsSyntaxLanguageExplicit = imported.IsSyntaxLanguageExplicit;
+                    if (!string.IsNullOrWhiteSpace(imported.Color)) _note.Color = imported.Color;
+                    if (!string.IsNullOrWhiteSpace(imported.FontFamily)) _note.FontFamily = imported.FontFamily;
+                    if (imported.FontSize is >= 8 and <= 72) _note.FontSize = imported.FontSize;
+                    _note.Elements.Clear();
+                    _note.Elements.AddRange(imported.Elements);
+                }
+                Editor.Text = _note.Text;
+                _note.IsExportDirty = false;
+                _note.LastModifiedUtc = DateTimeOffset.UtcNow;
+                RestoreElements();
+                ApplyAppearance();
+                UpdateExportPathDisplay();
+                _controller.ScheduleSave();
+                RememberExportFileVersion();
+            }
+            finally { _loading = false; }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or JsonException)
+        {
+            MessageBox.Show(this, "변경된 파일을 다시 불러오지 못했습니다. 파일 형식과 접근 권한을 확인해 주세요.", "NaraNote", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { _checkingExternalFile = false; }
     }
     private string CompactExportPath(string path)
     {

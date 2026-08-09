@@ -55,6 +55,32 @@ public sealed class CoreTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task Rich_note_package_can_be_imported_with_elements()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaraNote-import-{Guid.NewGuid():N}"); Directory.CreateDirectory(root);
+        try
+        {
+            var image = Path.Combine(root, "image.png"); await File.WriteAllBytesAsync(image, [1, 2, 3]);
+            var original = new NoteData
+            {
+                Text = "reloaded", FontFamily = "Consolas", FontSize = 18, SyntaxLanguage = "Python",
+                Elements = [new ImageElement { StoredFilePath = image, Caption = "caption" }, new InkStrokeElement { Points = [new(1, 2)] }]
+            };
+            var path = Path.Combine(root, "note.naranote");
+            var exporter = new NoteDocumentExporter();
+            await exporter.ExportAsync(original, path);
+            var imported = await exporter.ImportAsync(path, Path.Combine(root, "assets"));
+            Assert.Equal("reloaded", imported.Text);
+            Assert.Equal("Python", imported.SyntaxLanguage);
+            Assert.Equal("Consolas", imported.FontFamily);
+            Assert.Equal(2, imported.Elements.Count);
+            Assert.True(File.Exists(Assert.IsType<ImageElement>(imported.Elements[0]).StoredFilePath));
+            Assert.Single(Assert.IsType<InkStrokeElement>(imported.Elements[1]).Points);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Fact] public void New_note_uses_saved_font_defaults()
     {
         var settings = new AppSettings { DefaultFontFamily = "Consolas", DefaultFontSize = 22 };

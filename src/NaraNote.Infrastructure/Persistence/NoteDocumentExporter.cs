@@ -6,7 +6,51 @@ namespace NaraNote.Infrastructure.Persistence;
 
 public sealed class NoteDocumentExporter
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
+
+    public async Task<NoteData> ImportAsync(string path, string assetDirectory, CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase))
+            return new NoteData { Text = await File.ReadAllTextAsync(path, cancellationToken) };
+
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 32 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        var manifestEntry = archive.GetEntry("manifest.json") ?? throw new InvalidDataException("NaraNote 문서에 manifest.json이 없습니다.");
+        NoteDocumentManifest manifest;
+        await using (var manifestStream = manifestEntry.Open())
+            manifest = await JsonSerializer.DeserializeAsync<NoteDocumentManifest>(manifestStream, JsonOptions, cancellationToken)
+                ?? throw new InvalidDataException("NaraNote 문서를 읽을 수 없습니다.");
+        Directory.CreateDirectory(assetDirectory);
+        var note = new NoteData
+        {
+            Id = manifest.NoteId == Guid.Empty ? Guid.NewGuid() : manifest.NoteId,
+            Text = manifest.Text,
+            SyntaxLanguage = manifest.SyntaxLanguage,
+            IsSyntaxLanguageExplicit = manifest.IsSyntaxLanguageExplicit,
+            Width = manifest.Width,
+            Height = manifest.Height,
+            Color = manifest.Color,
+            FontFamily = manifest.FontFamily,
+            FontSize = manifest.FontSize,
+            LastModifiedUtc = manifest.LastModifiedUtc
+        };
+        foreach (var element in manifest.Elements)
+        {
+            switch (element.Type)
+            {
+                case "image":
+                    note.Elements.Add(new ImageElement { Id = element.Id, ZIndex = element.ZIndex, X = element.X, Y = element.Y, Width = element.Width, Height = element.Height, Caption = element.Caption ?? "", StoredFilePath = await ExtractAssetAsync(archive, element, assetDirectory, cancellationToken) ?? element.SourcePath ?? "" });
+                    break;
+                case "attachment":
+                    note.Elements.Add(new FileAttachmentElement { Id = element.Id, ZIndex = element.ZIndex, X = element.X, Y = element.Y, Width = element.Width, Height = element.Height, DisplayName = element.DisplayName ?? "", OriginalFilePath = await ExtractAssetAsync(archive, element, assetDirectory, cancellationToken) ?? element.SourcePath ?? "" });
+                    break;
+                case "ink":
+                    note.Elements.Add(new InkStrokeElement { Id = element.Id, ZIndex = element.ZIndex, Color = element.Color ?? "#FF222222", Thickness = element.Thickness, Points = element.Points ?? [] });
+                    break;
+            }
+        }
+        return note;
+    }
 
     public async Task ExportAsync(NoteData note, string path, CancellationToken cancellationToken = default)
     {
@@ -72,6 +116,19 @@ public sealed class NoteDocumentExporter
         await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 32 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using var target = entry.Open();
         await source.CopyToAsync(target, cancellationToken);
+    }
+
+    private static async Task<string?> ExtractAssetAsync(ZipArchive archive, NoteDocumentElement element, string directory, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(element.File)) return null;
+        var entry = archive.GetEntry(element.File.Replace('\\', '/'));
+        if (entry is null) return null;
+        var extension = Path.GetExtension(Path.GetFileName(element.File));
+        var destination = Path.Combine(directory, $"{element.Id:N}{extension}");
+        await using var source = entry.Open();
+        await using var target = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.Read, 32 * 1024, FileOptions.Asynchronous);
+        await source.CopyToAsync(target, cancellationToken);
+        return destination;
     }
 
     private static NoteDocumentManifest CreateManifest(NoteData note) => new()
