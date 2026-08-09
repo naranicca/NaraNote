@@ -10,7 +10,7 @@ namespace NaraNote.Core.Tests;
 
 public sealed class CoreTests
 {
-    [Fact] public void Empty_state_gets_default_note() => Assert.Single(AppStateFactory.EnsureUsable(new AppState()).Notes);
+    [Fact] public void Empty_state_remains_without_notes() => Assert.Empty(AppStateFactory.EnsureUsable(new AppState()).Notes);
 
     [Fact]
     public async Task Text_note_exports_as_utf8_text()

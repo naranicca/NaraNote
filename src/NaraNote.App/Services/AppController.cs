@@ -33,11 +33,6 @@ public sealed class AppController : IDisposable
         UiText.SetLanguage(State.Settings.Language);
         foreach (var note in State.Notes) ClearMissingExportPath(note);
         var open = State.Notes.Where(n => n.IsOpen).ToList();
-        if (open.Count == 0)
-        {
-            var note = AppStateFactory.CreateNote(State.Settings);
-            State.Notes.Add(note); open.Add(note);
-        }
         foreach (var note in open)
         {
             _logger.Info("Startup", $"Creating note window {note.Id}.");
