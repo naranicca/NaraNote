@@ -135,6 +135,11 @@
     <Separator Margin="0,13,0,11" Background="#16000000"/>
     <CheckBox x:Name="TrayBox" Content="{loc:Loc UseTray}" Height="24"/>
     <CheckBox x:Name="StartupBox" Content="{loc:Loc RunAtStartup}" Height="24" Margin="0,9,0,0"/>
+    <CheckBox x:Name="AutoUpdateBox" Content="{loc:Loc AutoUpdate}" Height="24" Margin="0,9,0,0"/>
+    <Grid Margin="0,9,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock x:Name="VersionText" VerticalAlignment="Center" Foreground="#FF6E6E73"/>
+     <Button Grid.Column="1" Content="{loc:Loc CheckNow}" Click="CheckForUpdates_Click"/>
+    </Grid>
     <Separator Margin="0,13,0,11" Background="#16000000"/>
     <TextBlock Text="{loc:Loc ReminderSound}" FontWeight="SemiBold" Margin="0,0,0,7"/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

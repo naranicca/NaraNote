@@ -14,4 +14,9 @@ public sealed class FileLogger
         var line = $"{DateTimeOffset.Now:O}\tERROR\t{area}\t{exception.GetType().Name}\t{exception.Message}{Environment.NewLine}{exception.StackTrace}{Environment.NewLine}";
         try { lock (_gate) File.AppendAllText(_path, line); } catch (IOException) { }
     }
+    public void Info(string area, string message)
+    {
+        var line = $"{DateTimeOffset.Now:O}\tINFO\t{area}\t{message}{Environment.NewLine}";
+        try { lock (_gate) File.AppendAllText(_path, line); } catch (IOException) { }
+    }
 }

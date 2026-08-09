@@ -26,6 +26,7 @@ public sealed class AppSettings
     public bool UseToggleNotesHotKey { get; set; } = true;
     public bool UseSystemTray { get; set; } = true;
     public bool RunAtStartup { get; set; }
+    public bool CheckForUpdatesAutomatically { get; set; } = true;
     public Dictionary<string, string> GlobalHotKeys { get; set; } = new()
     {
         ["NewNote"] = "Ctrl+Alt+N", ["ToggleNotes"] = "Ctrl+Alt+H"

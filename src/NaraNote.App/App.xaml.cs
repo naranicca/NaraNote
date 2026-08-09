@@ -24,7 +24,12 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException or ArgumentException) { logger.Error("FileAssociation", ex); }
         Controller = new AppController(new JsonAppStateStore(), logger);
+        logger.Info("Startup", "Loading application state.");
         await Controller.StartAsync();
+        logger.Info("Startup", "Initial note windows created.");
+        if (Controller.State.Settings.CheckForUpdatesAutomatically)
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                new Action(() => _ = new UpdateService(logger).CheckAsync(false)));
     }
     protected override async void OnExit(ExitEventArgs e) { if (Controller is not null) await Controller.SaveNowAsync(); base.OnExit(e); }
 }

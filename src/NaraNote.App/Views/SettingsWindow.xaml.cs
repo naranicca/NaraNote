@@ -10,6 +10,9 @@ using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using ColorConverter = System.Windows.Media.ColorConverter;
 using FontFamily = System.Windows.Media.FontFamily;
+using System.Reflection;
+using NaraNote.App.Services;
+using NaraNote.Infrastructure.Logging;
 
 namespace NaraNote.App.Views;
 
@@ -41,6 +44,8 @@ public partial class SettingsWindow : Window
         PenThicknessTextBox.Text = PenThicknessSlider.Value.ToString("0.#", CultureInfo.CurrentCulture);
         AlarmSoundPath.Text = string.IsNullOrWhiteSpace(settings.ReminderSoundPath) ? AppSettings.DefaultReminderSoundPath : settings.ReminderSoundPath;
         SizeBox.Text = settings.DefaultFontSize.ToString("0.#", CultureInfo.CurrentCulture); TrayBox.IsChecked = settings.UseSystemTray; StartupBox.IsChecked = settings.RunAtStartup;
+        AutoUpdateBox.IsChecked = settings.CheckForUpdatesAutomatically;
+        VersionText.Text = UiText.Format("CurrentVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0");
         NewNoteHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseNewNoteHotKey;
         ToggleNotesHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseToggleNotesHotKey;
         NewNoteHotKey.Text = settings.GlobalHotKeys.GetValueOrDefault("NewNote", "Ctrl+Alt+N"); ToggleHotKey.Text = settings.GlobalHotKeys.GetValueOrDefault("ToggleNotes", "Ctrl+Alt+H");
@@ -124,6 +129,12 @@ public partial class SettingsWindow : Window
         if (dialog.ShowDialog(this) == true) AlarmSoundPath.Text = dialog.FileName;
     }
     private void ResetAlarmSound_Click(object sender, RoutedEventArgs e) => AlarmSoundPath.Text = AppSettings.DefaultReminderSoundPath;
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button checkButton) checkButton.IsEnabled = false;
+        try { await new UpdateService(new FileLogger()).CheckAsync(true); }
+        finally { if (sender is Button completedButton) completedButton.IsEnabled = true; }
+    }
     private void UpdateGlobalHotKeyEditors()
     {
         if (NewNoteHotKey is null || ToggleHotKey is null) return;
@@ -157,6 +168,7 @@ public partial class SettingsWindow : Window
         _settings.UseNewNoteHotKey = NewNoteHotKeyEnabledBox.IsChecked == true;
         _settings.UseToggleNotesHotKey = ToggleNotesHotKeyEnabledBox.IsChecked == true;
         _settings.UseSystemTray = TrayBox.IsChecked == true; _settings.RunAtStartup = StartupBox.IsChecked == true;
+        _settings.CheckForUpdatesAutomatically = AutoUpdateBox.IsChecked == true;
         _settings.GlobalHotKeys["NewNote"] = NewNoteHotKey.Text; _settings.GlobalHotKeys["ToggleNotes"] = ToggleHotKey.Text; DialogResult = true;
     }
 }

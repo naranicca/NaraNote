@@ -29,6 +29,7 @@ public sealed class AppController : IDisposable
     public async Task StartAsync()
     {
         State = await _store.LoadAsync();
+        _logger.Info("Startup", $"State loaded ({State.Notes.Count} notes).");
         UiText.SetLanguage(State.Settings.Language);
         foreach (var note in State.Notes) ClearMissingExportPath(note);
         var open = State.Notes.Where(n => n.IsOpen).ToList();
@@ -39,7 +40,9 @@ public sealed class AppController : IDisposable
         }
         foreach (var note in open)
         {
+            _logger.Info("Startup", $"Creating note window {note.Id}.");
             Show(note);
+            _logger.Info("Startup", $"Note window {note.Id} shown.");
             if (ShouldAutoHideUntilReminder(note) && _windows.TryGetValue(note.Id, out var window)) window.Hide();
         }
         SetupReminderTimer();
@@ -60,8 +63,20 @@ public sealed class AppController : IDisposable
         ClearMissingExportPath(note);
         note.IsOpen = true;
         NormalizePlacement(note);
-        if (!_windows.TryGetValue(note.Id, out var window)) { window = new NoteWindow(note, this); _windows[note.Id] = window; }
-        window.Show(); window.Activate(); window.FocusEditor(); ScheduleSave();
+        if (!_windows.TryGetValue(note.Id, out var window))
+        {
+            _logger.Info("Startup", $"Constructing note window {note.Id}.");
+            window = new NoteWindow(note, this);
+            _windows[note.Id] = window;
+            _logger.Info("Startup", $"Constructed note window {note.Id}.");
+        }
+        window.ShowInTaskbar = true;
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        window.Show();
+        window.Visibility = Visibility.Visible;
+        window.Activate();
+        window.FocusEditor();
+        ScheduleSave();
     }
     private void SetupReminderTimer()
     {
