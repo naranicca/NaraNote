@@ -29,6 +29,7 @@ public partial class ReminderWindow : Window
             : (initial.Hour % 12 == 0 ? 12 : initial.Hour % 12).ToString(CultureInfo.CurrentCulture);
         MinuteBox.Text = initial.Minute.ToString("00", CultureInfo.CurrentCulture);
         RecurrenceBox.SelectedIndex = (int)current.Recurrence;
+        AutoHideCheck.IsChecked = current.AutoHide;
         Result = Clone(current);
         foreach (var day in current.DaysOfWeek) SetDay(day, true);
         DisableButton.Visibility = current.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
@@ -96,7 +97,7 @@ public partial class ReminderWindow : Window
         if (recurrence == ReminderRecurrence.Weekly) days = [due.DayOfWeek];
         if (recurrence == ReminderRecurrence.SelectedWeekdays && days.Count == 0)
         { MessageBox.Show(this, "반복할 요일을 하나 이상 선택해 주세요.", "NaraNote"); return; }
-        Result = new ReminderData { IsEnabled = true, NextDueUtc = due.ToUniversalTime(), Recurrence = recurrence, TimeOfDay = time, Use24HourFormat = use24Hour, DaysOfWeek = days };
+        Result = new ReminderData { IsEnabled = true, AutoHide = AutoHideCheck.IsChecked == true, NextDueUtc = due.ToUniversalTime(), Recurrence = recurrence, TimeOfDay = time, Use24HourFormat = use24Hour, DaysOfWeek = days };
         DialogResult = true;
     }
 
@@ -105,5 +106,5 @@ public partial class ReminderWindow : Window
     private bool IsDayChecked(DayOfWeek day) => GetDay(day).IsChecked == true;
     private void SetDay(DayOfWeek day, bool value) => GetDay(day).IsChecked = value;
     private System.Windows.Controls.CheckBox GetDay(DayOfWeek day) => day switch { DayOfWeek.Sunday => Sunday, DayOfWeek.Monday => Monday, DayOfWeek.Tuesday => Tuesday, DayOfWeek.Wednesday => Wednesday, DayOfWeek.Thursday => Thursday, DayOfWeek.Friday => Friday, _ => Saturday };
-    private static ReminderData Clone(ReminderData source) => new() { IsEnabled = source.IsEnabled, NextDueUtc = source.NextDueUtc, Recurrence = source.Recurrence, TimeOfDay = source.TimeOfDay, Use24HourFormat = source.Use24HourFormat, DaysOfWeek = [.. source.DaysOfWeek] };
+    private static ReminderData Clone(ReminderData source) => new() { IsEnabled = source.IsEnabled, AutoHide = source.AutoHide, NextDueUtc = source.NextDueUtc, Recurrence = source.Recurrence, TimeOfDay = source.TimeOfDay, Use24HourFormat = source.Use24HourFormat, DaysOfWeek = [.. source.DaysOfWeek] };
 }

@@ -204,6 +204,9 @@ public sealed class CoreTests
 
     [Fact] public void Contrast_handles_dark_and_light() { Assert.True(ColorContrast.UseLightForeground("#111111")); Assert.False(ColorContrast.UseLightForeground("#FFFFFF")); }
 
+    [Fact]
+    public void Reminder_auto_hide_is_disabled_by_default() => Assert.False(new ReminderData().AutoHide);
+
     [Theory]
     [InlineData("Ctrl+Alt+N", HotKeyModifiers.Control | HotKeyModifiers.Alt, 0x4E)]
     [InlineData("Ctrl+Shift+F12", HotKeyModifiers.Control | HotKeyModifiers.Shift, 0x7B)]

@@ -276,7 +276,7 @@ public partial class NoteWindow : Window
         }
         finally { if (attached) _ = AttachThreadInput(currentThread, foregroundThread, false); }
     }
-    private void StopReminderAnimation()
+    private void StopReminderAnimation(bool applyAutoHide = true)
     {
         if (!_reminderAnimationActive) return;
         BeginAnimation(LeftProperty, null);
@@ -288,6 +288,8 @@ public partial class NoteWindow : Window
         _reminderFocusTimer?.Stop();
         StopReminderSound();
         Topmost = _note.IsAlwaysOnTop;
+        if (applyAutoHide && _note.Reminder.IsEnabled && _note.Reminder.AutoHide)
+            Hide();
     }
 
     private void Editor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -377,7 +379,7 @@ public partial class NoteWindow : Window
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
     protected override void OnClosing(CancelEventArgs e)
     {
-        StopReminderAnimation();
+        StopReminderAnimation(false);
         CommitImeCompositionBeforeClose();
         _note.IsOpen = false;
         base.OnClosing(e);
@@ -1111,6 +1113,8 @@ public partial class NoteWindow : Window
         if (!accepted) return;
         RefreshReminderMenu();
         _controller.CheckRemindersNow();
+        if (!_reminderAnimationActive && _note.Reminder.IsEnabled && _note.Reminder.AutoHide && _note.Reminder.NextDueUtc > DateTimeOffset.UtcNow)
+            Hide();
     }
     private void AddSyntaxLanguageMenu(ContextMenu menu)
     {
@@ -1196,6 +1200,9 @@ public partial class NoteWindow : Window
         var saveAs = new MenuItem { Header = "다른 이름으로 저장", InputGestureText = "Ctrl+Shift+S" };
         saveAs.Click += (_, _) => _ = ExportCurrentNoteAsync(true);
         menu.Items.Add(saveAs);
+        var hideNote = new MenuItem { Header = "노트 숨기기" };
+        hideNote.Click += (_, _) => HideCurrentNote();
+        menu.Items.Add(hideNote);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "실행 취소", Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
         menu.Items.Add(new MenuItem { Header = "다시 실행", Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
@@ -1205,6 +1212,12 @@ public partial class NoteWindow : Window
         menu.Items.Add(new MenuItem { Header = "붙여넣기", Command = ApplicationCommands.Paste, CommandTarget = Editor, InputGestureText = "Ctrl+V" });
         menu.Items.Add(new MenuItem { Header = "삭제", Command = ApplicationCommands.Delete, CommandTarget = Editor, InputGestureText = "Delete" });
         menu.Items.Add(new MenuItem { Header = "전체 선택", Command = ApplicationCommands.SelectAll, CommandTarget = Editor, InputGestureText = "Ctrl+A" });
+    }
+    private void HideCurrentNote()
+    {
+        CommitImeCompositionBeforeClose();
+        _controller.ScheduleSave();
+        Hide();
     }
     private async Task ExportCurrentNoteAsync(bool saveAs)
     {

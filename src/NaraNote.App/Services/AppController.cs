@@ -35,7 +35,11 @@ public sealed class AppController : IDisposable
             var note = AppStateFactory.CreateNote(State.Settings);
             State.Notes.Add(note); open.Add(note);
         }
-        foreach (var note in open) Show(note);
+        foreach (var note in open)
+        {
+            Show(note);
+            if (ShouldAutoHideUntilReminder(note) && _windows.TryGetValue(note.Id, out var window)) window.Hide();
+        }
         SetupReminderTimer();
         _ = Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { SetupTray(); SetupHotKeys(); }));
     }
@@ -95,13 +99,16 @@ public sealed class AppController : IDisposable
         {
             Show(note);
             if (_windows.TryGetValue(note.Id, out var window)) window.ActivateForReminder();
-            if (note.Reminder.Recurrence == ReminderRecurrence.Once) note.Reminder = new ReminderData();
+            if (note.Reminder.Recurrence == ReminderRecurrence.Once)
+                note.Reminder = new ReminderData { Use24HourFormat = note.Reminder.Use24HourFormat };
             else NaraNote.Core.Utilities.ReminderSchedule.AdvanceAfterTrigger(note.Reminder, now);
             if (_windows.TryGetValue(note.Id, out window)) window.RefreshReminderMenu();
         }
         _ = SaveNowAsync();
         ScheduleNextReminderCheck();
     }
+    private static bool ShouldAutoHideUntilReminder(NoteData note) =>
+        note.Reminder.IsEnabled && note.Reminder.AutoHide && note.Reminder.NextDueUtc > DateTimeOffset.UtcNow;
     private static void ClearMissingExportPath(NoteData note)
     {
         if (string.IsNullOrWhiteSpace(note.ExportFilePath) || File.Exists(note.ExportFilePath)) return;
@@ -140,7 +147,14 @@ public sealed class AppController : IDisposable
         _tray?.Dispose(); _tray = null; if (!State.Settings.UseSystemTray) return;
         var menu = new ContextMenuStrip();
         menu.Items.Add("새 노트", null, (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote()));
-        menu.Items.Add("모두 표시", null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(true)));
+        var showAllItem = new ToolStripMenuItem("모두 표시");
+        showAllItem.Click += (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(true));
+        menu.Items.Add(showAllItem);
+        menu.Opening += (_, _) => Application.Current.Dispatcher.Invoke(() =>
+        {
+            var hiddenCount = _windows.Values.Count(window => !window.IsVisible);
+            showAllItem.Text = hiddenCount > 0 ? $"모두 표시 ({hiddenCount}개 숨겨짐)" : "모두 표시";
+        });
         menu.Items.Add("모두 숨기기", null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(false)));
         menu.Items.Add("종료", null, (_, _) => Application.Current.Dispatcher.Invoke(Exit));
         _appIcon ??= LoadAppIcon();

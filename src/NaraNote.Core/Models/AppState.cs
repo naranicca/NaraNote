@@ -58,6 +58,7 @@ public enum ReminderRecurrence { Once, Daily, Weekly, SelectedWeekdays }
 public sealed class ReminderData
 {
     public bool IsEnabled { get; set; }
+    public bool AutoHide { get; set; }
     public DateTimeOffset NextDueUtc { get; set; }
     public ReminderRecurrence Recurrence { get; set; }
     public TimeSpan TimeOfDay { get; set; }
