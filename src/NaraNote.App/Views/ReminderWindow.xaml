@@ -70,7 +70,7 @@
   </Style>
  </Window.Resources>
  <Grid Margin="22,18,22,20">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel Grid.Row="0" Margin="2,0,0,14">
    <TextBlock Text="{loc:Loc Reminder}" FontSize="22" FontWeight="SemiBold"/>
    <TextBlock Text="{loc:Loc ReminderDescription}" Margin="0,4,0,0" Foreground="#FF6E6E73" FontSize="12.5"/>
@@ -93,7 +93,7 @@
      <CheckBox x:Name="Use24HourCheck" Content="{loc:Loc Use24Hour}" DockPanel.Dock="Right" Height="24" HorizontalAlignment="Right" Checked="TimeFormatCheck_Changed" Unchecked="TimeFormatCheck_Changed"/>
     </DockPanel>
     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
-     <ComboBox x:Name="AmPmBox" Width="74" Margin="0,0,8,0"><ComboBoxItem Content="{loc:Loc AM}"/><ComboBoxItem Content="{loc:Loc PM}"/></ComboBox>
+     <ComboBox x:Name="AmPmBox" Width="74" Margin="0,0,8,0" PreviewMouseLeftButtonDown="DropDownComboBox_PreviewMouseLeftButtonDown"><ComboBoxItem Content="{loc:Loc AM}"/><ComboBoxItem Content="{loc:Loc PM}"/></ComboBox>
      <ComboBox x:Name="HourBox" Width="72" IsEditable="True" IsTextSearchEnabled="False" MaxDropDownHeight="240" ToolTip="{loc:Loc Hour}" DropDownOpened="TimePart_DropDownOpened"/>
      <TextBlock Text=":" FontSize="20" FontWeight="SemiBold" Margin="8,0" VerticalAlignment="Center" Foreground="#FF636366"/>
      <ComboBox x:Name="MinuteBox" Width="72" IsEditable="True" IsTextSearchEnabled="False" MaxDropDownHeight="240" ToolTip="{loc:Loc Minute059}" DropDownOpened="TimePart_DropDownOpened"/>
@@ -106,15 +106,12 @@
     <Grid>
      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <TextBlock Text="{loc:Loc Repeat}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-     <ComboBox x:Name="RecurrenceBox" Grid.Column="1" SelectionChanged="RecurrenceBox_SelectionChanged">
+     <ComboBox x:Name="RecurrenceBox" Grid.Column="1" SelectionChanged="RecurrenceBox_SelectionChanged" PreviewMouseLeftButtonDown="DropDownComboBox_PreviewMouseLeftButtonDown">
       <ComboBoxItem Content="{loc:Loc RepeatOnce}"/><ComboBoxItem Content="{loc:Loc RepeatDaily}"/><ComboBoxItem Content="{loc:Loc RepeatWeekly}"/><ComboBoxItem Content="{loc:Loc RepeatWeekdays}"/>
      </ComboBox>
     </Grid>
-    <Separator Margin="0,13,0,11" Background="#16000000"/>
-    <CheckBox x:Name="AutoHideCheck" Content="{loc:Loc AutoHide}" Height="24"/>
-    <TextBlock Text="{loc:Loc AutoHideDescription}" Margin="28,3,0,0" FontSize="11.5" Foreground="#FF8E8E93"/>
-    <StackPanel x:Name="WeekdayPanel" Margin="0,14,0,0" Visibility="Collapsed">
-     <Separator Margin="0,0,0,12" Background="#16000000"/>
+    <StackPanel x:Name="WeekdayPanel" Visibility="Collapsed">
+     <Separator Margin="0,13,0,12" Background="#16000000"/>
      <UniformGrid Columns="7">
       <CheckBox x:Name="Sunday" Content="{loc:Loc Sun}"/><CheckBox x:Name="Monday" Content="{loc:Loc Mon}"/><CheckBox x:Name="Tuesday" Content="{loc:Loc Tue}"/><CheckBox x:Name="Wednesday" Content="{loc:Loc Wed}"/><CheckBox x:Name="Thursday" Content="{loc:Loc Thu}"/><CheckBox x:Name="Friday" Content="{loc:Loc Fri}"/><CheckBox x:Name="Saturday" Content="{loc:Loc Sat}"/>
      </UniformGrid>
@@ -122,7 +119,14 @@
    </StackPanel>
   </Border>
 
-  <Grid Grid.Row="4" Margin="0,18,0,0">
+  <Border Grid.Row="4" Style="{StaticResource CardStyle}" Margin="0,10,0,0">
+   <StackPanel>
+    <CheckBox x:Name="AutoHideCheck" Content="{loc:Loc AutoHide}" Height="24"/>
+    <TextBlock Text="{loc:Loc AutoHideDescription}" Margin="28,3,0,0" FontSize="11.5" Foreground="#FF8E8E93"/>
+   </StackPanel>
+  </Border>
+
+  <Grid Grid.Row="5" Margin="0,18,0,0">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <Button x:Name="DisableButton" Content="{loc:Loc ReminderDisable}" Style="{StaticResource DestructiveButtonStyle}" HorizontalAlignment="Left" Click="Disable_Click"/>
    <Button Grid.Column="1" Content="{loc:Loc Cancel}" Margin="0,0,8,0" IsCancel="True"/>

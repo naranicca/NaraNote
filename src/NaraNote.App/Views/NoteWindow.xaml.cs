@@ -577,6 +577,7 @@ public partial class NoteWindow : Window
             return;
         }
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
+        if (e.Key == Key.F8 || e.SystemKey == Key.F8) { SwitchToPenMode(); e.Handled = true; return; }
         if (e.Key == Key.F10 || e.SystemKey == Key.F10) { OpenNoteMenu(true); e.Handled = true; return; }
         if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; return; }
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -595,6 +596,13 @@ public partial class NoteWindow : Window
         else if (e.Key == Key.Escape) ClearObjectSelection();
     }
     private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive || _autoPenInputActive;
+    private void SwitchToPenMode()
+    {
+        ClearObjectSelection();
+        Ink.IsHitTestVisible = true;
+        Ink.EditingMode = InkCanvasEditingMode.Ink;
+        UpdateShiftLineCursor();
+    }
     private void SwitchToTextMode()
     {
         Ink.EditingMode = InkCanvasEditingMode.None;
@@ -1108,7 +1116,7 @@ public partial class NoteWindow : Window
         AddTextEditingMenus(menu);
         menu.Items.Add(new Separator());
         var select = new MenuItem { Header = UiText.Get("TextMode"), IsCheckable = true };
-        var pen = new MenuItem { Header = UiText.Get("PenMode"), IsCheckable = true };
+        var pen = new MenuItem { Header = UiText.Get("PenMode"), IsCheckable = true, InputGestureText = "F8" };
         var erase = new MenuItem { Header = UiText.Get("EraserMode"), IsCheckable = true };
         void UpdateToolModeMenu()
         {
@@ -1120,7 +1128,7 @@ public partial class NoteWindow : Window
             erase.Visibility = hasInk ? Visibility.Visible : Visibility.Collapsed;
         }
         select.Click += (_, _) => { SwitchToTextMode(); UpdateToolModeMenu(); };
-        pen.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink; UpdateShiftLineCursor(); UpdateToolModeMenu(); };
+        pen.Click += (_, _) => { SwitchToPenMode(); UpdateToolModeMenu(); };
         erase.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke; ResetShiftLineMode(); UpdateToolModeMenu(); };
         menu.Opened += (_, _) => UpdateToolModeMenu();
         menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu);

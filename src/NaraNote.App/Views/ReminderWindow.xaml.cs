@@ -81,6 +81,13 @@ public partial class ReminderWindow : Window
         if (WeekdayPanel is null) return;
         WeekdayPanel.Visibility = RecurrenceBox.SelectedIndex == (int)ReminderRecurrence.SelectedWeekdays ? Visibility.Visible : Visibility.Collapsed;
     }
+    private void DropDownComboBox_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ComboBox box || box.IsDropDownOpen) return;
+        box.Focus();
+        box.IsDropDownOpen = true;
+        e.Handled = true;
+    }
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {

@@ -130,6 +130,12 @@ public partial class SettingsWindow : Window
         NewNoteHotKey.IsEnabled = NewNoteHotKeyEnabledBox.IsChecked == true;
         ToggleHotKey.IsEnabled = ToggleNotesHotKeyEnabledBox.IsChecked == true;
     }
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        DialogResult = false;
+        e.Handled = true;
+    }
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
         if ((NewNoteHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(NewNoteHotKey.Text, out _)) || (ToggleNotesHotKeyEnabledBox.IsChecked == true && !NaraNote.Core.Utilities.HotKeyDefinition.TryParse(ToggleHotKey.Text, out _))) { System.Windows.MessageBox.Show(UiText.Get("HotKeyError"), "NaraNote"); return; }
