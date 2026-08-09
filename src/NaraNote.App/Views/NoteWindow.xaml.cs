@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -42,7 +43,8 @@ namespace NaraNote.App.Views;
 
 public partial class NoteWindow : Window
 {
-    private const int WmNcHitTest = 0x0084, Grip = 16;
+    private const int WmNcHitTest = 0x0084, WmImeStartComposition = 0x010D, WmImeEndComposition = 0x010E, WmImeComposition = 0x010F, Grip = 16;
+    private const int GcsCompStr = 0x0008, GcsResultStr = 0x0800, CfsForcePosition = 0x0020;
     private const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34;
     private const int DwmWindowCornerPreferenceRound = 2;
     private const uint DwmColorNone = 0xFFFFFFFE;
@@ -76,10 +78,13 @@ public partial class NoteWindow : Window
     private bool _suppressAutoPenUntilStylusLeaves;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
+    private bool _imeCompositionActive;
+    private HwndSource? _imeHwndSource;
     public NoteWindow(NoteData note, AppController controller)
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
+        Editor.TextArea.LostKeyboardFocus += Editor_LostKeyboardFocus;
         SourceInitialized += (_, _) => EnableNativeWindowAppearance();
         _vm.PropertyChanged += (_, e) =>
         {
@@ -128,12 +133,29 @@ public partial class NoteWindow : Window
     }
     public void FocusEditor()
     {
-        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ContextIdle, new Action(() =>
         {
-            Editor.Focus(); Keyboard.Focus(Editor); Editor.CaretOffset = Editor.Text.Length;
+            FocusEditorTextArea(true);
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                new Action(() => FocusEditorTextArea(false)));
         }));
     }
+    private void FocusEditorTextArea(bool moveCaretToEnd)
+    {
+        if (!IsVisible || !IsActive) return;
+        Editor.TextArea.Focus();
+        Keyboard.Focus(Editor.TextArea);
+        if (moveCaretToEnd) Editor.CaretOffset = Editor.Text.Length;
+        CommandManager.InvalidateRequerySuggested();
+    }
     public void ApplyAppSettings() => ApplyPenSettings();
+
+    private void Editor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        EndImeComposition();
+        Editor.TextArea.Caret.Show();
+    }
+
     private void ApplyPenSettings()
     {
         var settings = _controller.State.Settings;
@@ -213,7 +235,12 @@ public partial class NoteWindow : Window
     }
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
     protected override void OnClosing(CancelEventArgs e) { _note.IsOpen = false; base.OnClosing(e); }
-    protected override void OnClosed(EventArgs e) { PersistInk(); _controller.Closed(_note); base.OnClosed(e); }
+    protected override void OnClosed(EventArgs e)
+    {
+        EndImeComposition();
+        if (_imeHwndSource is not null) _imeHwndSource.RemoveHook(ImeWndProc);
+        PersistInk(); _controller.Closed(_note); base.OnClosed(e);
+    }
     private void TitleArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed) return;
@@ -1139,6 +1166,8 @@ public partial class NoteWindow : Window
         if (!OperatingSystem.IsWindows()) return;
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
+        _imeHwndSource = HwndSource.FromHwnd(hwnd);
+        _imeHwndSource?.AddHook(ImeWndProc);
         var margins = new DwmMargins();
         _ = DwmExtendFrameIntoClientArea(hwnd, ref margins);
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)) return;
@@ -1147,6 +1176,132 @@ public partial class NoteWindow : Window
         var borderColor = DwmColorNone;
         _ = DwmSetWindowAttribute(hwnd, DwmwaBorderColor, ref borderColor, sizeof(uint));
     }
+    private IntPtr ImeWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmImeStartComposition) BeginImeComposition();
+        else if (msg == WmImeComposition && _imeCompositionActive)
+        {
+            UpdateImeComposition(hwnd, lParam);
+            handled = true;
+        }
+        else if (msg == WmImeEndComposition) EndImeComposition();
+        return IntPtr.Zero;
+    }
+    private void BeginImeComposition()
+    {
+        if (Editor.SelectionLength > 0)
+        {
+            var selectionStart = Editor.SelectionStart;
+            Editor.Document.Remove(selectionStart, Editor.SelectionLength);
+            Editor.CaretOffset = selectionStart;
+            Editor.Select(selectionStart, 0);
+        }
+        if (_imeCompositionActive) return;
+        _imeCompositionActive = true;
+        Editor.TextArea.Caret.Hide();
+    }
+    private void EndImeComposition()
+    {
+        if (!_imeCompositionActive) return;
+        _imeCompositionActive = false;
+        ImeCompositionCanvas.Children.Clear();
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+        {
+            if (Editor.TextArea.IsKeyboardFocused) Editor.TextArea.Caret.Show();
+        }));
+    }
+    private void UpdateImeComposition(IntPtr hwnd, IntPtr compositionFlags)
+    {
+        Editor.TextArea.Caret.Hide();
+        var context = ImmGetContext(hwnd);
+        if (context == IntPtr.Zero) return;
+        try
+        {
+            HideNativeImeComposition(context);
+            if ((compositionFlags.ToInt64() & GcsResultStr) != 0)
+            {
+                var result = ReadImeString(context, GcsResultStr);
+                if (result.Length > 0) InsertEditorText(result);
+                ImeCompositionCanvas.Children.Clear();
+                if ((compositionFlags.ToInt64() & GcsCompStr) == 0) return;
+            }
+            var composition = ReadImeString(context, GcsCompStr);
+            if (composition.Length == 0) { ImeCompositionCanvas.Children.Clear(); return; }
+            // The Microsoft Korean IME reports position 0 through the legacy IMM path
+            // even though its visible composition caret belongs after the syllable.
+            // Keep the inline pre-edit caret at the end, matching modern Windows editors.
+            var cursorPosition = composition.Length;
+            RenderImeComposition(composition, cursorPosition);
+        }
+        finally { _ = ImmReleaseContext(hwnd, context); }
+    }
+    private static string ReadImeString(IntPtr context, int index)
+    {
+        var byteCount = ImmGetCompositionString(context, index, IntPtr.Zero, 0);
+        if (byteCount <= 0) return string.Empty;
+        var buffer = Marshal.AllocHGlobal(byteCount);
+        try
+        {
+            return ImmGetCompositionString(context, index, buffer, byteCount) > 0
+                ? Marshal.PtrToStringUni(buffer, byteCount / 2) ?? string.Empty
+                : string.Empty;
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+    private static void HideNativeImeComposition(IntPtr context)
+    {
+        var form = new CompositionForm { Style = CfsForcePosition, CurrentPosition = new NativePoint { X = -32000, Y = -32000 } };
+        _ = ImmSetCompositionWindow(context, ref form);
+    }
+    private void RenderImeComposition(string composition, int cursorPosition)
+    {
+        ImeCompositionCanvas.Children.Clear();
+        var view = Editor.TextArea.TextView;
+        var caret = Editor.TextArea.Caret.CalculateCaretRectangle();
+        var origin = view.TransformToAncestor(Surface).Transform(new System.Windows.Point(
+            caret.Left - view.ScrollOffset.X, caret.Top - view.ScrollOffset.Y));
+        var foreground = Editor.Foreground ?? Brushes.Black;
+        var text = new TextBlock
+        {
+            Text = composition,
+            FontFamily = Editor.FontFamily,
+            FontSize = Editor.FontSize,
+            Foreground = foreground,
+            TextDecorations = TextDecorations.Underline,
+            Background = Frame.Background
+        };
+        Canvas.SetLeft(text, origin.X);
+        Canvas.SetTop(text, origin.Y);
+        ImeCompositionCanvas.Children.Add(text);
+        var beforeCaret = composition[..cursorPosition];
+        var formatted = new FormattedText(beforeCaret, System.Globalization.CultureInfo.CurrentUICulture,
+            System.Windows.FlowDirection.LeftToRight, new Typeface(Editor.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+            Editor.FontSize, foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var caretLine = new System.Windows.Shapes.Line
+        {
+            X1 = origin.X + formatted.WidthIncludingTrailingWhitespace,
+            X2 = origin.X + formatted.WidthIncludingTrailingWhitespace,
+            Y1 = origin.Y + 1,
+            Y2 = origin.Y + Math.Max(caret.Height, Editor.FontSize),
+            Stroke = foreground,
+            StrokeThickness = 1
+        };
+        ImeCompositionCanvas.Children.Add(caretLine);
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CompositionForm { public int Style; public NativePoint CurrentPosition; public NativeRect Area; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("imm32.dll")]
+    private static extern IntPtr ImmGetContext(IntPtr hwnd);
+    [DllImport("imm32.dll")]
+    private static extern bool ImmReleaseContext(IntPtr hwnd, IntPtr context);
+    [DllImport("imm32.dll", CharSet = CharSet.Unicode)]
+    private static extern int ImmGetCompositionString(IntPtr context, int index, IntPtr buffer, int bufferLength);
+    [DllImport("imm32.dll")]
+    private static extern bool ImmSetCompositionWindow(IntPtr context, ref CompositionForm form);
     [StructLayout(LayoutKind.Sequential)]
     private struct DwmMargins { public int Left, Right, Top, Bottom; }
     [DllImport("dwmapi.dll")]
