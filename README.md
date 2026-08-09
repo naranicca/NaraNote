@@ -2,7 +2,7 @@
 
 NaraNote is a lightweight sticky-note application for Windows. It opens directly into independent note windows instead of a traditional main window, keeps note data on the local machine, and restores open notes across sessions.
 
-Version 1.0.1 targets Windows 10 22H2 or later and Windows 11 on x64 systems. The release is distributed as one self-contained `NaraNote.exe`; the .NET runtime does not need to be installed separately.
+Version 1.0.0 targets Windows 10 22H2 or later and Windows 11 on x64 systems. The release is distributed as one self-contained `NaraNote.exe`; the .NET runtime does not need to be installed separately.
 
 ## Table of contents
 
