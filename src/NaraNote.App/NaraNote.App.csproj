@@ -2,6 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>NaraNote</AssemblyName>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0</InformationalVersion>
     <ApplicationIcon>Resources\NaraNote.ico</ApplicationIcon>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
