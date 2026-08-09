@@ -351,7 +351,7 @@ public partial class NoteWindow : Window
     private void ApplyCaptionTypography()
     {
         if (ObjectCanvas is null) return;
-        foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(x => x.Tag is ImageElement))
+        foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(x => x.Tag is ImageElement or FileAttachmentElement))
         {
             caption.FontFamily = Editor.FontFamily; caption.FontSize = Editor.FontSize; caption.Foreground = Editor.Foreground;
         }
@@ -859,12 +859,18 @@ public partial class NoteWindow : Window
     private void AddAttachment(FileAttachmentElement element) { _history.Execute(new DelegateCommand(() => _note.Elements.Add(element), () => _note.Elements.Remove(element))); RestoreElements(); SelectObject(element); _vm.Touch(); }
     private void RenderAttachment(FileAttachmentElement element)
     {
+        if (element.Height <= 44.5) { element.Width = Math.Max(element.Width, 176); element.Height = 120; }
         var exists = File.Exists(element.OriginalFilePath) || Directory.Exists(element.OriginalFilePath);
-        var prefix = !exists ? "⚠ " : Directory.Exists(element.OriginalFilePath) ? "📁 " : "📎 ";
-        var label = new TextBlock { Text = prefix + element.DisplayName, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
-        var button = new Button { Content = label, Width = element.Width, Height = element.Height, Padding = new Thickness(8, 4, 8, 4), ToolTip = element.OriginalFilePath, Cursor = Cursors.SizeAll, HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch };
-        button.Tag = element; Canvas.SetLeft(button, element.X); Canvas.SetTop(button, element.Y); Panel.SetZIndex(button, element.ZIndex); ObjectCanvas.Children.Add(button); AttachObjectInteraction(button, element);
-        AddAttachmentHandles(button, element);
+        var content = new Grid { Margin = new Thickness(6, 4, 6, 5) };
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var icon = new Image { Source = ShellIconProvider.GetIcon(element.OriginalFilePath), Width = 48, Height = 48, Stretch = Stretch.Uniform, HorizontalAlignment = System.Windows.HorizontalAlignment.Center, VerticalAlignment = System.Windows.VerticalAlignment.Center, Opacity = exists ? 1 : .42 };
+        content.Children.Add(icon);
+        var visual = new Border { Child = content, Width = element.Width, Height = element.Height, Background = Brushes.Transparent, BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), ToolTip = element.OriginalFilePath, Cursor = Cursors.SizeAll };
+        visual.Tag = element; Canvas.SetLeft(visual, element.X); Canvas.SetTop(visual, element.Y); Panel.SetZIndex(visual, element.ZIndex); ObjectCanvas.Children.Add(visual); AttachObjectInteraction(visual, element);
+        var caption = new TextBlock { Text = element.DisplayName, Width = element.Width, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Tag = element, Cursor = Cursors.Hand, FontFamily = Editor.FontFamily, FontSize = Editor.FontSize, Foreground = Editor.Foreground, ToolTip = element.OriginalFilePath, Opacity = exists ? 1 : .58 };
+        Canvas.SetLeft(caption, element.X); Canvas.SetTop(caption, element.Y + element.Height + 2); Panel.SetZIndex(caption, element.ZIndex); ObjectCanvas.Children.Add(caption);
+        caption.MouseLeftButtonDown += (_, e) => { SelectObject(element); if (e.ClickCount >= 2) OpenAttachment(element); e.Handled = true; };
+        AddAttachmentHandles(visual, element);
     }
     private static void OpenAttachment(FileAttachmentElement element)
     {
@@ -909,7 +915,7 @@ public partial class NoteWindow : Window
         {
             if (!visual.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed) return;
             var point = e.GetPosition(ObjectCanvas); var x = Math.Clamp(_elementOrigin.X + point.X - _dragOrigin.X, 0, Math.Max(0, ObjectCanvas.ActualWidth - visual.ActualWidth)); var y = Math.Clamp(_elementOrigin.Y + point.Y - _dragOrigin.Y, 0, Math.Max(0, ObjectCanvas.ActualHeight - visual.ActualHeight));
-            SetElementPosition(element, x, y); Canvas.SetLeft(visual, x); Canvas.SetTop(visual, y); if (element is ImageElement image) { PositionHandles(image); foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(c => ReferenceEquals(c.Tag, image))) { Canvas.SetLeft(caption, x); Canvas.SetTop(caption, y + image.Height + 2); } } else if (element is FileAttachmentElement attachment) PositionAttachmentHandles(attachment);
+            SetElementPosition(element, x, y); Canvas.SetLeft(visual, x); Canvas.SetTop(visual, y); if (element is ImageElement image) { PositionHandles(image); foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(c => ReferenceEquals(c.Tag, image))) { Canvas.SetLeft(caption, x); Canvas.SetTop(caption, y + image.Height + 2); } } else if (element is FileAttachmentElement attachment) { PositionAttachmentHandles(attachment); PositionAttachmentCaption(attachment); }
         }), true);
         visual.AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler((_, e) =>
         {
@@ -970,7 +976,7 @@ public partial class NoteWindow : Window
             {
                 var resized = ObjectSizing.ResizeFree(element.X, element.Y, element.Width, element.Height, e.HorizontalChange, e.VerticalChange, handle);
                 element.X = resized.X; element.Y = resized.Y; element.Width = resized.Width; element.Height = resized.Height; ConstrainAttachment(element);
-                visual.Width = element.Width; visual.Height = element.Height; Canvas.SetLeft(visual, element.X); Canvas.SetTop(visual, element.Y); PositionAttachmentHandles(element);
+                visual.Width = element.Width; visual.Height = element.Height; Canvas.SetLeft(visual, element.X); Canvas.SetTop(visual, element.Y); PositionAttachmentHandles(element); PositionAttachmentCaption(element);
             };
             thumb.DragCompleted += (_, _) =>
             {
@@ -989,6 +995,15 @@ public partial class NoteWindow : Window
             var left = handle.Item2 switch { ResizeHandle.TopLeft or ResizeHandle.Left or ResizeHandle.BottomLeft => element.X - 5, ResizeHandle.Top or ResizeHandle.Bottom => element.X + element.Width / 2 - 5, _ => element.X + element.Width - 5 };
             var top = handle.Item2 switch { ResizeHandle.TopLeft or ResizeHandle.Top or ResizeHandle.TopRight => element.Y - 5, ResizeHandle.Left or ResizeHandle.Right => element.Y + element.Height / 2 - 5, _ => element.Y + element.Height - 5 };
             Canvas.SetLeft(thumb, left); Canvas.SetTop(thumb, top); Panel.SetZIndex(thumb, int.MaxValue);
+        }
+    }
+    private void PositionAttachmentCaption(FileAttachmentElement element)
+    {
+        foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(x => ReferenceEquals(x.Tag, element)))
+        {
+            caption.Width = element.Width;
+            Canvas.SetLeft(caption, element.X);
+            Canvas.SetTop(caption, element.Y + element.Height + 2);
         }
     }
     private void ConstrainAttachment(FileAttachmentElement element)
