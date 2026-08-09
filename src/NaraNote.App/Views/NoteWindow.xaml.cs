@@ -47,6 +47,7 @@ public partial class NoteWindow : Window
     private const int DwmWindowCornerPreferenceRound = 2;
     private const uint DwmColorNone = 0xFFFFFFFE;
     private const double DefaultPenThickness = 3.5;
+    private static readonly Guid StrokeIdProperty = new("6DD0CE91-4A58-4F3C-922E-5D891B0B29A4");
     private static readonly double[] PenThicknessSteps = [1d, 2d, DefaultPenThickness, 6d, 10d];
     private static IHighlightingDefinition? _luaHighlighting;
     private readonly NoteData _note; private readonly AppController _controller; private readonly NoteViewModel _vm;
@@ -104,6 +105,7 @@ public partial class NoteWindow : Window
         Ink.PreviewMouseLeftButtonDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
         Ink.PreviewMouseMove += (_, e) => { if (_inkInputActive && e.LeftButton == MouseButtonState.Pressed) AutoExpandForInk(e.GetPosition(Ink)); };
         Ink.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
+        Ink.StrokeErasing += Ink_StrokeErasing;
         Ink.AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Ink_PreviewStylusDownForObjectSelection), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForObjectSelection), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
@@ -155,6 +157,12 @@ public partial class NoteWindow : Window
             ? new SolidColorBrush(Color.FromArgb(210, 255, 255, 255))
             : new SolidColorBrush(Color.FromArgb(145, 0, 0, 0));
         headerForeground.Freeze(); NewNoteButton.Foreground = headerForeground; SettingsButton.Foreground = headerForeground; CloseNoteButton.Foreground = headerForeground;
+        PinButton.Foreground = headerForeground;
+        PinButton.Background = Brushes.Transparent;
+        PinButton.Opacity = 1;
+        PinHeadPath.Fill = _note.IsAlwaysOnTop ? headerForeground : Brushes.Transparent;
+        PinIconViewbox.RenderTransform = new RotateTransform(_note.IsAlwaysOnTop ? 0 : 90);
+        PinButton.ToolTip = _note.IsAlwaysOnTop ? "항상 위 해제" : "항상 위";
         ExportPathTextBlock.Foreground = headerForeground;
         ExportDirtyIndicator.Foreground = headerForeground;
         UpdateExportPathDisplay();
@@ -175,6 +183,13 @@ public partial class NoteWindow : Window
         }
     }
     private void New_Click(object sender, RoutedEventArgs e) => _controller.NewNote(_note);
+    private void Pin_Click(object sender, RoutedEventArgs e)
+    {
+        _note.IsAlwaysOnTop = !_note.IsAlwaysOnTop;
+        Topmost = _note.IsAlwaysOnTop;
+        ApplyAppearance();
+        _vm.Touch();
+    }
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(_vm, _controller.State.Settings) { Owner = this };
@@ -333,7 +348,7 @@ public partial class NoteWindow : Window
     {
         if (InputHitTest(point) is not DependencyObject hit) return false;
         var button = FindAncestor<Button>(hit);
-        return ReferenceEquals(button, NewNoteButton) || ReferenceEquals(button, SettingsButton) || ReferenceEquals(button, CloseNoteButton);
+        return ReferenceEquals(button, NewNoteButton) || ReferenceEquals(button, PinButton) || ReferenceEquals(button, SettingsButton) || ReferenceEquals(button, CloseNoteButton);
     }
     private int GetResizeEdge(System.Windows.Point point)
     {
@@ -549,6 +564,7 @@ public partial class NoteWindow : Window
         var attributes = Ink.DefaultDrawingAttributes.Clone(); attributes.FitToCurve = false;
         var stroke = new Stroke(new StylusPointCollection(points.Select(point => new StylusPoint(point.X, point.Y, point.Pressure)))) { DrawingAttributes = attributes };
         var added = new InkStrokeElement { Points = points, Color = attributes.Color.ToString(), Thickness = attributes.Width };
+        SetStrokeId(stroke, added.Id);
         Ink.Strokes.Add(stroke); _history.Execute(new DelegateCommand(() => { if (!_note.Elements.Contains(added)) _note.Elements.Add(added); }, () => _note.Elements.Remove(added))); _vm.Touch();
     }
     private void UpdateShiftLineCursor()
@@ -820,9 +836,27 @@ public partial class NoteWindow : Window
     private void RestoreElements() { var selected = _selectedElement; ObjectCanvas.Children.Clear(); _selectedVisual = null; foreach (var e in _note.Elements.OrderBy(x => x.ZIndex)) { if (e is ImageElement i) RenderImage(i); else if (e is FileAttachmentElement f) RenderAttachment(f); } if (selected is not null && _note.Elements.Contains(selected)) SelectObject(selected); }
     private void RestoreInk()
     {
-        Ink.Strokes.Clear(); foreach (var data in _note.Elements.OfType<InkStrokeElement>()) { var points = new StylusPointCollection(data.Points.Select(p => new StylusPoint(p.X, p.Y, p.Pressure))); var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = (Color)ColorConverter.ConvertFromString(data.Color), Width = data.Thickness, Height = data.Thickness, IgnorePressure = false, FitToCurve = true, StylusTip = StylusTip.Ellipse } }; Ink.Strokes.Add(stroke); }
+        Ink.Strokes.Clear(); foreach (var data in _note.Elements.OfType<InkStrokeElement>()) { var points = new StylusPointCollection(data.Points.Select(p => new StylusPoint(p.X, p.Y, p.Pressure))); var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = (Color)ColorConverter.ConvertFromString(data.Color), Width = data.Thickness, Height = data.Thickness, IgnorePressure = false, FitToCurve = true, StylusTip = StylusTip.Ellipse } }; SetStrokeId(stroke, data.Id); Ink.Strokes.Add(stroke); }
     }
-    private void PersistInk() { _note.Elements.RemoveAll(x => x is InkStrokeElement); foreach (var s in Ink.Strokes) _note.Elements.Add(new InkStrokeElement { Color = s.DrawingAttributes.Color.ToString(), Thickness = s.DrawingAttributes.Width, Points = s.StylusPoints.Select(p => new InkPointData(p.X, p.Y, p.PressureFactor)).ToList() }); }
+    private void PersistInk() { _note.Elements.RemoveAll(x => x is InkStrokeElement); foreach (var s in Ink.Strokes) _note.Elements.Add(CreateInkElement(s)); }
+    private static InkStrokeElement CreateInkElement(Stroke stroke) => new()
+    {
+        Id = TryGetStrokeId(stroke, out var id) ? id : Guid.NewGuid(),
+        Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width,
+        Points = stroke.StylusPoints.Select(p => new InkPointData(p.X, p.Y, p.PressureFactor)).ToList()
+    };
+    private void Ink_StrokeErasing(object sender, InkCanvasStrokeErasingEventArgs erased)
+    {
+        var removed = TryGetStrokeId(erased.Stroke, out var id) ? _note.Elements.OfType<InkStrokeElement>().FirstOrDefault(stroke => stroke.Id == id) : null;
+        if (removed is not null)
+            _history.Execute(new DelegateCommand(() => _note.Elements.Remove(removed), () => _note.Elements.Add(removed)));
+        else
+        {
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { PersistInk(); _vm.Touch(); }));
+            return;
+        }
+        _vm.Touch();
+    }
     private void Ink_StrokeCollected(object sender, InkCanvasStrokeCollectedEventArgs e)
         => ProcessInkStroke(e.Stroke);
     private void ProcessInkStroke(Stroke stroke)
@@ -837,9 +871,18 @@ public partial class NoteWindow : Window
         else
         {
             var added = new InkStrokeElement { Points = pts, Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width };
+            SetStrokeId(stroke, added.Id);
             _history.Execute(new DelegateCommand(() => { if (!_note.Elements.Contains(added)) _note.Elements.Add(added); }, () => _note.Elements.Remove(added)));
         }
         _vm.Touch();
+    }
+    private static void SetStrokeId(Stroke stroke, Guid id) => stroke.AddPropertyData(StrokeIdProperty, id.ToString("D"));
+    private static bool TryGetStrokeId(Stroke stroke, out Guid id)
+    {
+        id = default;
+        return stroke.ContainsPropertyData(StrokeIdProperty)
+            && stroke.GetPropertyData(StrokeIdProperty) is string value
+            && Guid.TryParse(value, out id);
     }
     private void BuildContextMenu()
     {
@@ -954,6 +997,9 @@ public partial class NoteWindow : Window
         var save = new MenuItem { Header = "현재 노트 저장", InputGestureText = "Ctrl+S" };
         save.Click += (_, _) => _ = ExportCurrentNoteAsync(false);
         menu.Items.Add(save);
+        var saveAs = new MenuItem { Header = "다른 이름으로 저장", InputGestureText = "Ctrl+Shift+S" };
+        saveAs.Click += (_, _) => _ = ExportCurrentNoteAsync(true);
+        menu.Items.Add(saveAs);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "실행 취소", Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
         menu.Items.Add(new MenuItem { Header = "다시 실행", Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
@@ -973,22 +1019,35 @@ public partial class NoteWindow : Window
             var snapshot = CreateExportSnapshot();
             var rich = snapshot.Elements.Count > 0;
             var path = _note.ExportFilePath;
-            var canReuse = !saveAs && !string.IsNullOrWhiteSpace(path) && (!rich || string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase));
-            if (!canReuse)
+            var showDialog = saveAs || string.IsNullOrWhiteSpace(path);
+            while (true)
             {
-                var dialog = new SaveFileDialog
+                if (showDialog)
                 {
-                    Title = "현재 노트 저장",
-                    AddExtension = true,
-                    OverwritePrompt = true,
-                    DefaultExt = rich ? ".naranote" : ".txt",
-                    Filter = rich ? "NaraNote 문서 (*.naranote)|*.naranote" : "텍스트 파일 (*.txt)|*.txt|NaraNote 문서 (*.naranote)|*.naranote",
-                    FileName = CreateSuggestedExportName(snapshot.Text)
-                };
-                if (dialog.ShowDialog(this) != true) return;
-                path = dialog.FileName;
+                    var dialog = new SaveFileDialog
+                    {
+                        Title = "현재 노트 저장",
+                        AddExtension = true,
+                        OverwritePrompt = true,
+                        DefaultExt = rich ? ".naranote" : ".txt",
+                        Filter = rich
+                            ? "NaraNote 문서 (*.naranote)|*.naranote|텍스트 파일 (*.txt)|*.txt"
+                            : "텍스트 파일 (*.txt)|*.txt|NaraNote 문서 (*.naranote)|*.naranote",
+                        FilterIndex = 1,
+                        FileName = CreateSuggestedExportName(snapshot.Text)
+                    };
+                    if (dialog.ShowDialog(this) != true) return;
+                    path = dialog.FileName;
+                }
+                if (string.IsNullOrWhiteSpace(path)) return;
+                if (!rich || string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase)) break;
+                var result = MessageBox.Show(
+                    "이 형식으로 저장하면 텍스트만 저장되며 드로잉, 이미지 및 첨부 개체는 파일에 포함되지 않습니다.\n\n계속 저장하시겠습니까?",
+                    "개체가 제외됩니다", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+                if (result == MessageBoxResult.Yes) break;
+                if (!showDialog) return;
+                path = null;
             }
-            if (string.IsNullOrWhiteSpace(path)) return;
             await _documentExporter.ExportAsync(snapshot, path);
             _vm.MarkExported(path);
             UpdateExportPathDisplay();

@@ -16,10 +16,10 @@ public sealed class NoteDocumentExporter
         var temporary = path + ".tmp";
         try
         {
-            if (string.Equals(Path.GetExtension(path), ".txt", StringComparison.OrdinalIgnoreCase))
-                await WriteTextAsync(temporary, note.Text, cancellationToken);
-            else
+            if (string.Equals(Path.GetExtension(path), ".naranote", StringComparison.OrdinalIgnoreCase))
                 await WritePackageAsync(temporary, note, cancellationToken);
+            else
+                await WriteTextAsync(temporary, note.Text, cancellationToken);
             ReplaceFile(temporary, path);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }

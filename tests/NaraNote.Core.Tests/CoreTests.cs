@@ -26,6 +26,20 @@ public sealed class CoreTests
     }
 
     [Fact]
+    public async Task Rich_note_exported_to_non_naranote_format_keeps_only_text()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaraNote-tests-{Guid.NewGuid():N}"); Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "note.md");
+            var note = new NoteData { Text = "# text", Elements = [new InkStrokeElement { Points = [new(1, 2)] }] };
+            await new NoteDocumentExporter().ExportAsync(note, path);
+            Assert.Equal("# text", await File.ReadAllTextAsync(path));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task Rich_note_package_contains_manifest_and_assets()
     {
         var root = Path.Combine(Path.GetTempPath(), $"NaraNote-tests-{Guid.NewGuid():N}"); Directory.CreateDirectory(root);

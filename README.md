@@ -55,6 +55,7 @@ dotnet publish src/NaraNote.App/NaraNote.App.csproj -c Release -o publish
 - `Ctrl+S` 또는 컨텍스트 메뉴의 `현재 노트 저장`으로 현재 노트를 독립 파일로 저장합니다.
 - 텍스트만 있는 노트는 기본적으로 UTF-8 `.txt`로 저장합니다.
 - 이미지, 첨부 파일 또는 드로잉이 있으면 `.naranote` 문서로 저장합니다.
+- 개체가 있는 노트도 텍스트 형식을 선택할 수 있지만 기본값은 `.naranote`입니다. `.naranote` 이외의 확장자로 저장하면 텍스트만 남는다는 경고를 확인해야 합니다.
 - `.naranote`는 ZIP 기반 패키지이며 `manifest.json`, `images/`, `attachments/`를 포함합니다.
 - 존재하는 이미지와 첨부 파일은 패키지 안에 복사하고, 찾을 수 없는 첨부 파일은 원본 경로 정보만 기록합니다.
 - 한 번 저장한 노트에서 `Ctrl+S`를 누르면 같은 파일을 갱신하며, `Ctrl+Shift+S`는 다른 이름으로 저장합니다.
