@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using NaraNote.App.Views;
 using NaraNote.Core.Models;
 using NaraNote.Core.Services;
@@ -19,6 +20,7 @@ public sealed class AppController : IDisposable
     private System.Drawing.Icon? _appIcon;
     private GlobalHotKeyManager? _hotKeys; private bool _allVisible = true;
     private Guid? _lastActiveNoteId;
+    private DispatcherTimer? _reminderTimer;
     public AppState State { get; private set; } = new();
     public AppController(IAppStateStore store, FileLogger logger) { _store = store; _logger = logger; }
 
@@ -33,6 +35,7 @@ public sealed class AppController : IDisposable
             State.Notes.Add(note); open.Add(note);
         }
         foreach (var note in open) Show(note);
+        SetupReminderTimer();
         _ = Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { SetupTray(); SetupHotKeys(); }));
     }
     public void NewNote(NoteData? source = null)
@@ -52,6 +55,51 @@ public sealed class AppController : IDisposable
         NormalizePlacement(note);
         if (!_windows.TryGetValue(note.Id, out var window)) { window = new NoteWindow(note, this); _windows[note.Id] = window; }
         window.Show(); window.Activate(); window.FocusEditor(); ScheduleSave();
+    }
+    private void SetupReminderTimer()
+    {
+        _reminderTimer?.Stop();
+        _reminderTimer = new DispatcherTimer(DispatcherPriority.Normal);
+        _reminderTimer.Tick += ReminderTimer_Tick;
+        CheckRemindersNow();
+    }
+    private void ReminderTimer_Tick(object? sender, EventArgs e)
+    {
+        _reminderTimer?.Stop();
+        CheckRemindersNow();
+    }
+    private void ScheduleNextReminderCheck()
+    {
+        if (_reminderTimer is null) return;
+        _reminderTimer.Stop();
+        var nextDue = State.Notes
+            .Where(note => note.Reminder.IsEnabled)
+            .Select(note => (DateTimeOffset?)note.Reminder.NextDueUtc)
+            .Min();
+        if (nextDue is null) return;
+
+        var delay = nextDue.Value - DateTimeOffset.UtcNow;
+        if (delay <= TimeSpan.Zero) delay = TimeSpan.FromMilliseconds(10);
+        // Re-evaluate occasionally so sleep/resume and wall-clock changes cannot leave a stale long timer.
+        if (delay > TimeSpan.FromHours(1)) delay = TimeSpan.FromHours(1);
+        _reminderTimer.Interval = delay;
+        _reminderTimer.Start();
+    }
+    public void CheckRemindersNow()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var due = State.Notes.Where(note => note.Reminder.IsEnabled && note.Reminder.NextDueUtc <= now).ToList();
+        if (due.Count == 0) { ScheduleNextReminderCheck(); return; }
+        foreach (var note in due)
+        {
+            Show(note);
+            if (_windows.TryGetValue(note.Id, out var window)) window.ActivateForReminder();
+            if (note.Reminder.Recurrence == ReminderRecurrence.Once) note.Reminder = new ReminderData();
+            else NaraNote.Core.Utilities.ReminderSchedule.AdvanceAfterTrigger(note.Reminder, now);
+            if (_windows.TryGetValue(note.Id, out window)) window.RefreshReminderMenu();
+        }
+        _ = SaveNowAsync();
+        ScheduleNextReminderCheck();
     }
     private static void ClearMissingExportPath(NoteData note)
     {
@@ -163,5 +211,5 @@ public sealed class AppController : IDisposable
         }
         else _hotKeys.Unregister(101);
     }
-    public void Dispose() { _hotKeys?.Dispose(); _tray?.Dispose(); _appIcon?.Dispose(); _debounce?.Dispose(); _saveGate.Dispose(); }
+    public void Dispose() { _reminderTimer?.Stop(); _hotKeys?.Dispose(); _tray?.Dispose(); _appIcon?.Dispose(); _debounce?.Dispose(); _saveGate.Dispose(); }
 }

@@ -9,9 +9,11 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Animation;
 using System.Windows.Ink;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using NaraNote.App.Services;
 using NaraNote.App.ViewModels;
 using NaraNote.Core.Commands;
@@ -77,6 +79,7 @@ public partial class NoteWindow : Window
     private StylusPointCollection? _autoPenPoints;
     private DrawingAttributes? _autoPenAttributes;
     private ContextMenu? _noteContextMenu;
+    private MenuItem? _reminderMenuItem;
     private bool _suppressAutoPenUntilStylusLeaves;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
@@ -87,6 +90,9 @@ public partial class NoteWindow : Window
     private bool _hasObservedExportVersion;
     private bool _observedExportExists;
     private bool _checkingExternalFile;
+    private bool _reminderAnimationActive;
+    private double _reminderOriginalLeft;
+    private DispatcherTimer? _reminderFocusTimer;
     public NoteWindow(NoteData note, AppController controller)
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
@@ -101,7 +107,7 @@ public partial class NoteWindow : Window
         };
         Left = note.Left; Top = note.Top; Width = note.Width; Height = note.Height; Topmost = note.IsAlwaysOnTop;
         ApplyPenSettings();
-        Editor.Text = note.Text; ApplyAppearance(); RestoreElements(); BuildContextMenu();
+        Editor.Text = note.Text; ApplyAppearance(); RestoreElements(); BuildContextMenu(); RefreshReminderMenu();
         PreviewMouseLeftButtonDown += Resize_MouseLeftButtonDown;
         PreviewMouseMove += Resize_MouseMove;
         PreviewMouseLeftButtonUp += Resize_MouseLeftButtonUp;
@@ -131,12 +137,17 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
-        LocationChanged += (_, _) => { _note.Left = Left; _note.Top = Top; _vm.Touch(); };
+        LocationChanged += (_, _) => { if (_reminderAnimationActive) return; _note.Left = Left; _note.Top = Top; _vm.Touch(); };
         SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateExportPathDisplay(); _vm.Touch(); };
         Activated += NoteWindow_Activated;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
-        Deactivated += (_, _) => { ResetShiftLineMode(); FinishStylusWindowDrag(); };
+        Deactivated += (_, _) =>
+        {
+            ResetShiftLineMode(); FinishStylusWindowDrag();
+            if (_reminderAnimationActive)
+                _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Send, new Action(ForceReminderFocus));
+        };
         RememberExportFileVersion();
         _loading = false;
     }
@@ -158,6 +169,98 @@ public partial class NoteWindow : Window
         CommandManager.InvalidateRequerySuggested();
     }
     public void ApplyAppSettings() => ApplyPenSettings();
+    public void RefreshReminderMenu()
+    {
+        if (_reminderMenuItem is not null)
+            _reminderMenuItem.Header = _note.Reminder.IsEnabled ? "리마인더 변경…" : "리마인더…";
+        ReminderButton.Visibility = _note.Reminder.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private void ReminderButton_ToolTipOpening(object sender, ToolTipEventArgs e)
+    {
+        if (!_note.Reminder.IsEnabled) { ReminderButton.ToolTip = null; return; }
+        var remaining = _note.Reminder.NextDueUtc - DateTimeOffset.UtcNow;
+        ReminderButton.ToolTip = FormatRemainingReminderTime(remaining);
+    }
+    private static string FormatRemainingReminderTime(TimeSpan remaining)
+    {
+        if (remaining <= TimeSpan.Zero) return "곧 알림";
+        if (remaining.TotalDays >= 1) return $"{(int)remaining.TotalDays}일 {remaining.Hours}시간 {remaining.Minutes}분 남음";
+        if (remaining.TotalHours >= 1) return $"{(int)remaining.TotalHours}시간 {remaining.Minutes}분 남음";
+        if (remaining.TotalMinutes >= 1) return $"{Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes))}분 남음";
+        return $"{Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds))}초 남음";
+    }
+    public void ActivateForReminder()
+    {
+        if (_reminderAnimationActive) { ForceReminderFocus(); return; }
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show();
+        Topmost = true;
+        _reminderOriginalLeft = Left;
+        _reminderAnimationActive = true;
+        ForceReminderFocus();
+        _reminderFocusTimer ??= new DispatcherTimer(DispatcherPriority.Send)
+        {
+            Interval = TimeSpan.FromMilliseconds(350)
+        };
+        _reminderFocusTimer.Tick -= ReminderFocusTimer_Tick;
+        _reminderFocusTimer.Tick += ReminderFocusTimer_Tick;
+        _reminderFocusTimer.Start();
+        var rotation = new RotateTransform();
+        Frame.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
+        Frame.RenderTransform = rotation;
+        var shake = new DoubleAnimation(-1.15, 1.15, TimeSpan.FromMilliseconds(75))
+        {
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        rotation.BeginAnimation(RotateTransform.AngleProperty, shake);
+        var windowShake = new DoubleAnimation(_reminderOriginalLeft - 6, _reminderOriginalLeft + 6, TimeSpan.FromMilliseconds(70))
+        {
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        BeginAnimation(LeftProperty, windowShake, HandoffBehavior.SnapshotAndReplace);
+    }
+    private void ReminderFocusTimer_Tick(object? sender, EventArgs e) => ForceReminderFocus();
+    private void ForceReminderFocus()
+    {
+        if (!_reminderAnimationActive) return;
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show();
+        Topmost = true;
+        Activate();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero) ForceForegroundWindow(hwnd);
+        FocusEditor();
+    }
+    private static void ForceForegroundWindow(IntPtr hwnd)
+    {
+        var foreground = GetForegroundWindow();
+        var currentThread = GetCurrentThreadId();
+        var foregroundThread = foreground == IntPtr.Zero ? 0u : GetWindowThreadProcessId(foreground, IntPtr.Zero);
+        var attached = foregroundThread != 0 && foregroundThread != currentThread && AttachThreadInput(currentThread, foregroundThread, true);
+        try
+        {
+            _ = ShowWindow(hwnd, 9);
+            _ = BringWindowToTop(hwnd);
+            _ = SetForegroundWindow(hwnd);
+            _ = SetActiveWindow(hwnd);
+            _ = SetFocus(hwnd);
+        }
+        finally { if (attached) _ = AttachThreadInput(currentThread, foregroundThread, false); }
+    }
+    private void StopReminderAnimation()
+    {
+        if (!_reminderAnimationActive) return;
+        BeginAnimation(LeftProperty, null);
+        Left = _reminderOriginalLeft;
+        if (Frame.RenderTransform is RotateTransform rotation)
+            rotation.BeginAnimation(RotateTransform.AngleProperty, null);
+        Frame.RenderTransform = Transform.Identity;
+        _reminderAnimationActive = false;
+        _reminderFocusTimer?.Stop();
+        Topmost = _note.IsAlwaysOnTop;
+    }
 
     private void Editor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
@@ -187,7 +290,7 @@ public partial class NoteWindow : Window
         var headerForeground = ColorContrast.UseLightForeground(_note.Color)
             ? new SolidColorBrush(Color.FromArgb(210, 255, 255, 255))
             : new SolidColorBrush(Color.FromArgb(145, 0, 0, 0));
-        headerForeground.Freeze(); NewNoteButton.Foreground = headerForeground; SettingsButton.Foreground = headerForeground; CloseNoteButton.Foreground = headerForeground;
+        headerForeground.Freeze(); NewNoteButton.Foreground = headerForeground; SettingsButton.Foreground = headerForeground; CloseNoteButton.Foreground = headerForeground; ReminderButton.Foreground = headerForeground;
         PinButton.Foreground = headerForeground;
         PinButton.Background = Brushes.Transparent;
         PinButton.Opacity = 1;
@@ -246,6 +349,7 @@ public partial class NoteWindow : Window
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
     protected override void OnClosing(CancelEventArgs e)
     {
+        StopReminderAnimation();
         CommitImeCompositionBeforeClose();
         _note.IsOpen = false;
         base.OnClosing(e);
@@ -423,6 +527,12 @@ public partial class NoteWindow : Window
     }
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (_reminderAnimationActive)
+        {
+            if (e.Key == Key.Escape) StopReminderAnimation();
+            e.Handled = true;
+            return;
+        }
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
         if (e.Key == Key.F10 || e.SystemKey == Key.F10) { OpenNoteMenu(true); e.Handled = true; return; }
         if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; return; }
@@ -952,11 +1062,25 @@ public partial class NoteWindow : Window
         menu.Items.Add(new Separator());
         AddSyntaxLanguageMenu(menu); AddNoteColorMenu(menu);
         menu.Items.Add(new Separator());
+        var reminder = new MenuItem { Header = _note.Reminder.IsEnabled ? "리마인더 변경…" : "리마인더…" };
+        _reminderMenuItem = reminder;
+        reminder.Click += Reminder_Click;
+        menu.Items.Add(reminder);
+        menu.Items.Add(new Separator());
         var settings = new MenuItem { Header = "설정" };
         settings.Click += Settings_Click;
         menu.Items.Add(settings);
         menu.Closed += (_, _) => { menu.PlacementTarget = null; menu.Placement = PlacementMode.MousePoint; };
         Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
+    }
+    private void Reminder_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ReminderWindow(_note.Reminder) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        _note.Reminder = dialog.Result;
+        _controller.ScheduleSave();
+        RefreshReminderMenu();
+        _controller.CheckRemindersNow();
     }
     private void AddSyntaxLanguageMenu(ContextMenu menu)
     {
@@ -1317,6 +1441,13 @@ public partial class NoteWindow : Window
     }
     private IntPtr ImeWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (_reminderAnimationActive && msg is WmImeStartComposition or WmImeComposition)
+        {
+            var context = ImmGetContext(hwnd);
+            if (context != IntPtr.Zero) { _ = ImmNotifyIME(context, NiCompositionStr, CpsCancel, 0); _ = ImmReleaseContext(hwnd, context); }
+            handled = true;
+            return IntPtr.Zero;
+        }
         if (msg == WmImeStartComposition) BeginImeComposition();
         else if (msg == WmImeComposition && _imeCompositionActive)
         {
@@ -1467,6 +1598,24 @@ public partial class NoteWindow : Window
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int valueSize);
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref uint value, int valueSize);
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetActiveWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr processId);
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hwnd, int command);
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg != WmNcHitTest) return IntPtr.Zero; var point = PointFromLParam(lParam); var local = PointFromScreen(point); const double g = Grip;

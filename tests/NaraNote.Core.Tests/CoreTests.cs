@@ -88,6 +88,30 @@ public sealed class CoreTests
         Assert.Equal("Consolas", note.FontFamily); Assert.Equal(22, note.FontSize);
     }
 
+    [Fact]
+    public void Daily_reminder_advances_to_next_day_after_trigger()
+    {
+        var reminder = new ReminderData { IsEnabled = true, Recurrence = ReminderRecurrence.Daily, TimeOfDay = new TimeSpan(9, 0, 0) };
+        ReminderSchedule.AdvanceAfterTrigger(reminder, new DateTimeOffset(2026, 8, 9, 10, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
+        Assert.Equal(new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero), reminder.NextDueUtc);
+    }
+
+    [Fact]
+    public void Selected_weekday_reminder_uses_next_selected_day()
+    {
+        var reminder = new ReminderData { IsEnabled = true, Recurrence = ReminderRecurrence.SelectedWeekdays, TimeOfDay = new TimeSpan(8, 30, 0), DaysOfWeek = [DayOfWeek.Monday, DayOfWeek.Wednesday] };
+        ReminderSchedule.AdvanceAfterTrigger(reminder, new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
+        Assert.Equal(new DateTimeOffset(2026, 8, 12, 8, 30, 0, TimeSpan.Zero), reminder.NextDueUtc);
+    }
+
+    [Fact]
+    public void One_time_reminder_disables_after_trigger()
+    {
+        var reminder = new ReminderData { IsEnabled = true, Recurrence = ReminderRecurrence.Once };
+        ReminderSchedule.AdvanceAfterTrigger(reminder, DateTimeOffset.UtcNow, TimeZoneInfo.Utc);
+        Assert.False(reminder.IsEnabled);
+    }
+
     [Theory]
     [InlineData("a.TXT", DroppedFileKind.Text)] [InlineData("test.py", DroppedFileKind.Text)]
     [InlineData("source.CPP", DroppedFileKind.Text)] [InlineData("script.lua", DroppedFileKind.Text)]

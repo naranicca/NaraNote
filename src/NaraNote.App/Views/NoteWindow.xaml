@@ -41,7 +41,7 @@
   <Grid>
    <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="*"/></Grid.RowDefinitions>
    <Grid x:Name="TitleArea" Grid.Row="0" Background="Transparent" MouseLeftButtonDown="TitleArea_MouseLeftButtonDown">
-    <Grid Margin="58,0,62,0" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+    <Grid Margin="80,0,62,0" HorizontalAlignment="Stretch" VerticalAlignment="Center">
      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBlock x:Name="ExportPathTextBlock" Grid.Column="0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="11" Opacity="0.72"/>
      <TextBlock x:Name="ExportDirtyIndicator" Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center" Text="●" FontSize="8" FontWeight="SemiBold" Opacity="0.82" Visibility="Collapsed" ToolTip="저장한 파일 이후 수정됨"/>
@@ -61,6 +61,16 @@
        <Line X1="9" Y1="10" X2="9" Y2="15" Style="{StaticResource HeaderIconLineStyle}"/>
       </Canvas>
      </Viewbox>
+    </Button>
+    <Button x:Name="ReminderButton" Style="{StaticResource HeaderButtonStyle}" HorizontalAlignment="Left" Margin="48,0,0,0" Visibility="Collapsed" ToolTip="리마인더" ToolTipOpening="ReminderButton_ToolTipOpening" Click="Reminder_Click">
+     <Viewbox Width="14" Height="14" Stretch="Uniform"><Canvas Width="18" Height="18">
+      <Path Data="M 9,2.2 C 6.2,2.2 4.5,4.5 4.5,7.3 L 4.5,10.1 C 4.5,11.2 4,12.2 3.1,13 L 2.5,13.6 L 15.5,13.6 L 14.9,13 C 14,12.2 13.5,11.2 13.5,10.1 L 13.5,7.3 C 13.5,4.5 11.8,2.2 9,2.2 Z"
+            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7"
+            StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Fill="Transparent"/>
+      <Path Data="M 7.1,15 C 7.5,16.1 8.2,16.5 9,16.5 C 9.8,16.5 10.5,16.1 10.9,15"
+            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6"
+            StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent"/>
+     </Canvas></Viewbox>
     </Button>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
      <Button x:Name="SettingsButton" Style="{StaticResource HeaderButtonStyle}" ToolTip="메뉴" Click="Menu_Click">

@@ -46,8 +46,21 @@ public sealed class NoteData
     public bool IsExportDirty { get; set; }
     public bool IsOpen { get; set; } = true;
     public bool IsAlwaysOnTop { get; set; }
+    public ReminderData Reminder { get; set; } = new();
     public DateTimeOffset LastModifiedUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<NoteElement> Elements { get; set; } = [];
+}
+
+public enum ReminderRecurrence { Once, Daily, Weekly, SelectedWeekdays }
+
+public sealed class ReminderData
+{
+    public bool IsEnabled { get; set; }
+    public DateTimeOffset NextDueUtc { get; set; }
+    public ReminderRecurrence Recurrence { get; set; }
+    public TimeSpan TimeOfDay { get; set; }
+    public bool Use24HourFormat { get; set; }
+    public List<DayOfWeek> DaysOfWeek { get; set; } = [];
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
