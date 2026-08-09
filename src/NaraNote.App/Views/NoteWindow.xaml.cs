@@ -370,7 +370,7 @@ public partial class NoteWindow : Window
     }
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new SettingsWindow(_vm, _controller.State.Settings) { Owner = this };
+        var dialog = new SettingsWindow(_controller.State.Settings) { Owner = this };
         var confirmed = dialog.ShowDialog() == true;
         ApplyAppearance(); if (confirmed) _controller.ApplySettings(); await _controller.SaveNowAsync();
     }

@@ -81,11 +81,11 @@ public sealed class CoreTests
         finally { Directory.Delete(root, true); }
     }
 
-    [Fact] public void New_note_uses_saved_font_defaults()
+    [Fact] public void New_note_uses_saved_visual_defaults()
     {
-        var settings = new AppSettings { DefaultFontFamily = "Consolas", DefaultFontSize = 22 };
+        var settings = new AppSettings { DefaultFontFamily = "Consolas", DefaultFontSize = 22, DefaultColor = "#FFBDEBFF" };
         var note = AppStateFactory.CreateNote(settings);
-        Assert.Equal("Consolas", note.FontFamily); Assert.Equal(22, note.FontSize);
+        Assert.Equal("Consolas", note.FontFamily); Assert.Equal(22, note.FontSize); Assert.Equal("#FFBDEBFF", note.Color);
     }
 
     [Fact]

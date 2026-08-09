@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Globalization;
 using System.IO;
-using NaraNote.App.ViewModels;
 using NaraNote.Core.Models;
 using NaraNote.App.Localization;
 using Button = System.Windows.Controls.Button;
@@ -16,16 +15,16 @@ namespace NaraNote.App.Views;
 
 public partial class SettingsWindow : Window
 {
-    private readonly NoteViewModel _note; private readonly AppSettings _settings; private string _color; private string _penColor;
+    private readonly AppSettings _settings; private string _color; private string _penColor;
     private readonly Dictionary<Button, string> _colorButtons = [];
     private readonly Dictionary<Button, string> _penColorButtons = [];
     private static readonly string[] Palette = [AppSettings.DefaultNoteColor, "#FFCFF09E", "#FFBDEBFF", "#FFFFC4D8", "#FFFFC27A", "#FFDCC6FF", "#FFF3F3F3"];
     private static readonly (string NameKey, string Value)[] PenPalette = [("Black", "#FF000000"), ("DarkGray", "#FF2F4F4F"), ("Red", "#FFFF0000"), ("Blue", "#FF0000FF"), ("Green", "#FF008000"), ("Orange", "#FFFFA500"), ("Purple", "#FF800080")];
-    public SettingsWindow(NoteViewModel note, AppSettings settings)
+    public SettingsWindow(AppSettings settings)
     {
         InitializeComponent();
         if (UiText.Language != "ko") Width = 460;
-        _note = note; _settings = settings; _color = note.Color; _penColor = settings.DefaultPenColor;
+        _settings = settings; _color = settings.DefaultColor; _penColor = settings.DefaultPenColor;
         foreach (var (label, value) in new[]
         {
             (UiText.Get("SystemDefault"), "system"), ("English", "en"), ("Français", "fr"),
@@ -36,12 +35,12 @@ public partial class SettingsWindow : Window
             ?? LanguageBox.Items[0];
         var executable = Environment.ProcessPath; if (!string.IsNullOrWhiteSpace(executable)) { try { settings.RunAtStartup = new NaraNote.Infrastructure.Startup.StartupRegistration().IsEnabled(executable); } catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException) { } }
         var fontFamilies = Fonts.SystemFontFamilies.OrderBy(x => x.Source).ToList(); FontBox.ItemsSource = fontFamilies;
-        FontBox.SelectedItem = fontFamilies.FirstOrDefault(x => string.Equals(x.Source, note.FontFamily, StringComparison.OrdinalIgnoreCase)); FontBox.Text = note.FontFamily;
+        FontBox.SelectedItem = fontFamilies.FirstOrDefault(x => string.Equals(x.Source, settings.DefaultFontFamily, StringComparison.OrdinalIgnoreCase)); FontBox.Text = settings.DefaultFontFamily;
         SizeBox.ItemsSource = new[] { 8d, 9d, 10d, 11d, 12d, 14d, 16d, 18d, 20d, 22d, 24d, 28d, 32d, 36d, 48d, 60d, 72d };
         PenThicknessSlider.Value = Math.Clamp(settings.DefaultPenThickness, 1d, 10d);
         PenThicknessTextBox.Text = PenThicknessSlider.Value.ToString("0.#", CultureInfo.CurrentCulture);
         AlarmSoundPath.Text = string.IsNullOrWhiteSpace(settings.ReminderSoundPath) ? AppSettings.DefaultReminderSoundPath : settings.ReminderSoundPath;
-        SizeBox.Text = note.FontSize.ToString("0.#", CultureInfo.CurrentCulture); TrayBox.IsChecked = settings.UseSystemTray; StartupBox.IsChecked = settings.RunAtStartup;
+        SizeBox.Text = settings.DefaultFontSize.ToString("0.#", CultureInfo.CurrentCulture); TrayBox.IsChecked = settings.UseSystemTray; StartupBox.IsChecked = settings.RunAtStartup;
         NewNoteHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseNewNoteHotKey;
         ToggleNotesHotKeyEnabledBox.IsChecked = settings.UseGlobalHotKeys && settings.UseToggleNotesHotKey;
         NewNoteHotKey.Text = settings.GlobalHotKeys.GetValueOrDefault("NewNote", "Ctrl+Alt+N"); ToggleHotKey.Text = settings.GlobalHotKeys.GetValueOrDefault("ToggleNotes", "Ctrl+Alt+H");
@@ -50,7 +49,7 @@ public partial class SettingsWindow : Window
         {
             var button = new Button { Width = 38, Height = 30, Margin = new Thickness(2), Padding = new Thickness(0), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)), ToolTip = color, Style = (Style)FindResource("ColorPresetButtonStyle") };
             _colorButtons[button] = color;
-            button.Click += (_, _) => { _color = color; _note.Color = color; UpdateColorSelection(); };
+            button.Click += (_, _) => { _color = color; UpdateColorSelection(); };
             Colors.Children.Add(button);
         }
         foreach (var (nameKey, value) in PenPalette)
@@ -141,8 +140,8 @@ public partial class SettingsWindow : Window
         var selectedFont = FontBox.SelectedItem is FontFamily family ? family.Source : FontBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(selectedFont) || !Fonts.SystemFontFamilies.Any(x => string.Equals(x.Source, selectedFont, StringComparison.OrdinalIgnoreCase))) selectedFont = "Segoe UI";
         if (!double.TryParse(SizeBox.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var selectedSize) || selectedSize is < 8 or > 72) { System.Windows.MessageBox.Show(UiText.Get("FontSizeError"), "NaraNote"); return; }
-        _note.FontFamily = selectedFont; _note.FontSize = selectedSize; _note.Color = _color;
         _settings.DefaultFontFamily = selectedFont; _settings.DefaultFontSize = selectedSize;
+        _settings.DefaultColor = _color;
         _settings.DefaultPenColor = _penColor;
         _settings.DefaultPenThickness = PenThicknessSlider.Value;
         _settings.ReminderSoundPath = alarmSoundPath;
