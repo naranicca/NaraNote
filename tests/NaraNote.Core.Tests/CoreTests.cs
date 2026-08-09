@@ -63,9 +63,33 @@ public sealed class CoreTests
     }
 
     [Theory]
-    [InlineData("a.TXT", DroppedFileKind.Text)] [InlineData("a.webp", DroppedFileKind.Image)]
+    [InlineData("a.TXT", DroppedFileKind.Text)] [InlineData("test.py", DroppedFileKind.Text)]
+    [InlineData("source.CPP", DroppedFileKind.Text)] [InlineData("script.lua", DroppedFileKind.Text)]
+    [InlineData("component.tsx", DroppedFileKind.Text)] [InlineData("settings.toml", DroppedFileKind.Text)]
+    [InlineData("Dockerfile", DroppedFileKind.Text)] [InlineData(".gitignore", DroppedFileKind.Text)]
+    [InlineData("a.webp", DroppedFileKind.Image)]
     [InlineData("archive.zip", DroppedFileKind.Attachment)] [InlineData("README", DroppedFileKind.Attachment)]
     public void Files_are_classified(string path, DroppedFileKind expected) => Assert.Equal(expected, FileClassifier.Classify(path));
+
+    [Fact]
+    public void Unknown_extension_is_classified_from_content()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaraNote-classifier-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var text = Path.Combine(root, "notes.data");
+            var binary = Path.Combine(root, "payload.data");
+            var pdf = Path.Combine(root, "document.data");
+            File.WriteAllText(text, "한글 text\nsecond line");
+            File.WriteAllBytes(binary, new byte[] { 1, 2, 0, 3, 4, 5 });
+            File.WriteAllBytes(pdf, "%PDF-1.7\n"u8.ToArray());
+            Assert.Equal(DroppedFileKind.Text, FileClassifier.Classify(text));
+            Assert.Equal(DroppedFileKind.Attachment, FileClassifier.Classify(binary));
+            Assert.Equal(DroppedFileKind.Attachment, FileClassifier.Classify(pdf));
+        }
+        finally { Directory.Delete(root, true); }
+    }
 
     [Fact] public void Resize_keeps_ratio_and_anchor()
     {

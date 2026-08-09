@@ -43,7 +43,7 @@
    <Grid x:Name="TitleArea" Grid.Row="0" Background="Transparent" MouseLeftButtonDown="TitleArea_MouseLeftButtonDown">
     <Grid Margin="58,0,62,0" HorizontalAlignment="Stretch" VerticalAlignment="Center">
      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <TextBlock x:Name="ExportPathTextBlock" Grid.Column="0" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" FontSize="11" Opacity="0.72"/>
+     <TextBlock x:Name="ExportPathTextBlock" Grid.Column="0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="11" Opacity="0.72"/>
      <TextBlock x:Name="ExportDirtyIndicator" Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center" Text="●" FontSize="8" FontWeight="SemiBold" Opacity="0.82" Visibility="Collapsed" ToolTip="저장한 파일 이후 수정됨"/>
     </Grid>
     <Button x:Name="NewNoteButton" Style="{StaticResource HeaderButtonStyle}" HorizontalAlignment="Left" ToolTip="새 노트 (Ctrl+N)" Click="New_Click">

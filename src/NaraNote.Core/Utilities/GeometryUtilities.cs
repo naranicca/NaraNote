@@ -102,9 +102,92 @@ public static class WindowPlacement
 public enum DroppedFileKind { Text, Image, Attachment }
 public static class FileClassifier
 {
-    private static readonly HashSet<string> Text = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md", ".log", ".csv", ".json", ".xml", ".yaml", ".yml", ".ini" };
+    private const int SampleSize = 32 * 1024;
+    private static readonly HashSet<string> Text = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".markdown", ".rst", ".adoc", ".tex", ".log", ".csv", ".tsv",
+        ".json", ".jsonc", ".xml", ".xaml", ".svg", ".yaml", ".yml", ".toml", ".ini",
+        ".cfg", ".conf", ".config", ".properties", ".env",
+        ".py", ".pyw", ".cs", ".csx", ".vb", ".fs", ".fsx",
+        ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hxx", ".lua",
+        ".java", ".kt", ".kts", ".scala", ".go", ".rs", ".rb", ".php", ".swift", ".dart",
+        ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".html", ".htm", ".css",
+        ".scss", ".sass", ".less", ".vue", ".svelte",
+        ".ps1", ".psm1", ".psd1", ".sh", ".bash", ".zsh", ".fish", ".bat", ".cmd",
+        ".sql", ".r", ".pl", ".pm", ".groovy", ".gradle", ".proto", ".graphql", ".gql",
+        ".sln", ".csproj", ".vbproj", ".fsproj", ".vcxproj", ".props", ".targets"
+    };
+    private static readonly HashSet<string> TextFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Dockerfile", "Makefile", "CMakeLists.txt", ".gitignore", ".gitattributes", ".editorconfig", ".env"
+    };
     private static readonly HashSet<string> Images = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp" };
-    public static DroppedFileKind Classify(string path) => Text.Contains(Path.GetExtension(path)) ? DroppedFileKind.Text : Images.Contains(Path.GetExtension(path)) ? DroppedFileKind.Image : DroppedFileKind.Attachment;
+    public static DroppedFileKind Classify(string path)
+    {
+        var extension = Path.GetExtension(path);
+        if (Text.Contains(extension) || TextFileNames.Contains(Path.GetFileName(path))) return DroppedFileKind.Text;
+        if (Images.Contains(extension)) return DroppedFileKind.Image;
+        return LooksLikeTextFile(path) ? DroppedFileKind.Text : DroppedFileKind.Attachment;
+    }
+
+    private static bool LooksLikeTextFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return false;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var sample = new byte[Math.Min(SampleSize, (int)Math.Min(stream.Length, int.MaxValue))];
+            var count = stream.Read(sample, 0, sample.Length);
+            if (count == 0) return true;
+            var bytes = sample.AsSpan(0, count);
+            if (HasKnownBinarySignature(bytes)) return false;
+            if (HasTextBom(bytes)) return true;
+
+            var zeroCount = 0;
+            var suspiciousControls = 0;
+            var evenZeros = 0;
+            var oddZeros = 0;
+            for (var i = 0; i < bytes.Length; i++)
+            {
+                var value = bytes[i];
+                if (value == 0)
+                {
+                    zeroCount++;
+                    if ((i & 1) == 0) evenZeros++; else oddZeros++;
+                }
+                else if (value < 0x20 && value is not (0x08 or 0x09 or 0x0A or 0x0C or 0x0D)) suspiciousControls++;
+            }
+
+            if (zeroCount > 0)
+            {
+                var pairs = Math.Max(1, bytes.Length / 2);
+                var looksUtf16Le = oddZeros >= 2 && oddZeros > pairs * 0.3 && evenZeros < pairs * 0.05;
+                var looksUtf16Be = evenZeros >= 2 && evenZeros > pairs * 0.3 && oddZeros < pairs * 0.05;
+                return looksUtf16Le || looksUtf16Be;
+            }
+
+            // This also accepts legacy ANSI text: high bytes are not treated as binary,
+            // while embedded control bytes still cause an unknown file to remain an attachment.
+            return suspiciousControls <= Math.Max(1, bytes.Length / 100);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasTextBom(ReadOnlySpan<byte> bytes) =>
+        bytes.StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }) ||
+        bytes.StartsWith(new byte[] { 0xFF, 0xFE }) || bytes.StartsWith(new byte[] { 0xFE, 0xFF }) ||
+        bytes.StartsWith(new byte[] { 0x00, 0x00, 0xFE, 0xFF }) || bytes.StartsWith(new byte[] { 0xFF, 0xFE, 0x00, 0x00 });
+
+    private static bool HasKnownBinarySignature(ReadOnlySpan<byte> bytes) =>
+        bytes.StartsWith("%PDF-"u8) || bytes.StartsWith("PK\x03\x04"u8) || bytes.StartsWith("MZ"u8) ||
+        bytes.StartsWith(new byte[] { 0x1F, 0x8B }) || bytes.StartsWith(new byte[] { 0x7F, (byte)'E', (byte)'L', (byte)'F' }) ||
+        bytes.StartsWith(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }) ||
+        bytes.StartsWith(new byte[] { 0xFF, 0xD8, 0xFF }) || bytes.StartsWith("GIF8"u8) ||
+        bytes.StartsWith(new byte[] { 0x52, 0x61, 0x72, 0x21, 0x1A, 0x07 }) ||
+        bytes.StartsWith(new byte[] { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C });
 }
 
 public static class ColorContrast

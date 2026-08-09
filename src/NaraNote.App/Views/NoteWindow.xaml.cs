@@ -45,6 +45,7 @@ public partial class NoteWindow : Window
 {
     private const int WmNcHitTest = 0x0084, WmImeStartComposition = 0x010D, WmImeEndComposition = 0x010E, WmImeComposition = 0x010F, Grip = 16;
     private const int GcsCompStr = 0x0008, GcsResultStr = 0x0800, CfsForcePosition = 0x0020;
+    private const int NiCompositionStr = 0x0015, CpsCancel = 0x0004;
     private const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34;
     private const int DwmWindowCornerPreferenceRound = 2;
     private const uint DwmColorNone = 0xFFFFFFFE;
@@ -84,6 +85,7 @@ public partial class NoteWindow : Window
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
+        Editor.TextArea.SelectionBorder = null;
         Editor.TextArea.LostKeyboardFocus += Editor_LostKeyboardFocus;
         SourceInitialized += (_, _) => EnableNativeWindowAppearance();
         _vm.PropertyChanged += (_, e) =>
@@ -124,7 +126,7 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
         LocationChanged += (_, _) => { _note.Left = Left; _note.Top = Top; _vm.Touch(); };
-        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; _vm.Touch(); };
+        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateExportPathDisplay(); _vm.Touch(); };
         Activated += (_, _) => _controller.NoteActivated(_note);
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
@@ -153,7 +155,7 @@ public partial class NoteWindow : Window
     private void Editor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         EndImeComposition();
-        Editor.TextArea.Caret.Show();
+        Editor.TextArea.Caret.Hide();
     }
 
     private void ApplyPenSettings()
@@ -189,6 +191,7 @@ public partial class NoteWindow : Window
         ExportDirtyIndicator.Foreground = headerForeground;
         UpdateExportPathDisplay();
         Foreground = foreground; Editor.Foreground = foreground; Editor.FontSize = _note.FontSize; Editor.FontFamily = new FontFamily(_note.FontFamily);
+        Editor.TextArea.SelectionCornerRadius = Math.Clamp(Editor.FontSize * 0.18, 1.5, 6.0);
         ApplySyntaxHighlighting();
         ApplyCaptionTypography();
     }
@@ -234,7 +237,12 @@ public partial class NoteWindow : Window
             _noteContextMenu.Items.OfType<MenuItem>().FirstOrDefault()?.Focus()));
     }
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
-    protected override void OnClosing(CancelEventArgs e) { _note.IsOpen = false; base.OnClosing(e); }
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        CommitImeCompositionBeforeClose();
+        _note.IsOpen = false;
+        base.OnClosing(e);
+    }
     protected override void OnClosed(EventArgs e)
     {
         EndImeComposition();
@@ -1116,10 +1124,47 @@ public partial class NoteWindow : Window
     {
         if (ExportPathTextBlock is null) return;
         var path = _note.ExportFilePath;
-        ExportPathTextBlock.Text = path ?? "";
+        ExportPathTextBlock.Text = string.IsNullOrWhiteSpace(path) ? "" : CompactExportPath(path);
         ExportPathTextBlock.ToolTip = string.IsNullOrWhiteSpace(path) ? null : _note.IsExportDirty ? $"{path}\n저장한 파일 이후 수정됨" : path;
         ExportPathTextBlock.Visibility = string.IsNullOrWhiteSpace(path) ? Visibility.Collapsed : Visibility.Visible;
         ExportDirtyIndicator.Visibility = !string.IsNullOrWhiteSpace(path) && _note.IsExportDirty ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private string CompactExportPath(string path)
+    {
+        var availableWidth = Math.Max(40, ActualWidth - 132 - (_note.IsExportDirty ? 12 : 0));
+        bool Fits(string value)
+        {
+            var formatted = new FormattedText(value, System.Globalization.CultureInfo.CurrentUICulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new Typeface(ExportPathTextBlock.FontFamily, ExportPathTextBlock.FontStyle,
+                    ExportPathTextBlock.FontWeight, ExportPathTextBlock.FontStretch),
+                ExportPathTextBlock.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            return formatted.WidthIncludingTrailingWhitespace <= availableWidth;
+        }
+
+        if (Fits(path)) return path;
+        var fileName = Path.GetFileName(path);
+        var directory = Path.GetDirectoryName(path);
+        var parent = string.IsNullOrWhiteSpace(directory) ? null : Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (!string.IsNullOrWhiteSpace(parent))
+        {
+            var withParent = $"…{Path.DirectorySeparatorChar}{parent}{Path.DirectorySeparatorChar}{fileName}";
+            if (Fits(withParent)) return withParent;
+        }
+        var fileOnly = $"…{Path.DirectorySeparatorChar}{fileName}";
+        if (Fits(fileOnly)) return fileOnly;
+
+        var extension = Path.GetExtension(fileName);
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        for (var keep = Math.Max(1, stem.Length - 1); keep >= 1; keep--)
+        {
+            var prefixLength = (keep + 1) / 2;
+            var suffixLength = keep / 2;
+            var shortenedStem = suffixLength == 0 ? stem[..prefixLength] : $"{stem[..prefixLength]}…{stem[^suffixLength..]}";
+            var candidate = $"…{Path.DirectorySeparatorChar}{shortenedStem}{extension}";
+            if (Fits(candidate)) return candidate;
+        }
+        return extension.Length > 0 ? $"…{extension}" : "…";
     }
     private void AddNoteColorMenu(ContextMenu menu)
     {
@@ -1209,6 +1254,22 @@ public partial class NoteWindow : Window
         {
             if (Editor.TextArea.IsKeyboardFocused) Editor.TextArea.Caret.Show();
         }));
+    }
+    private void CommitImeCompositionBeforeClose()
+    {
+        if (!_imeCompositionActive) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) { EndImeComposition(); return; }
+        var context = ImmGetContext(hwnd);
+        if (context == IntPtr.Zero) { EndImeComposition(); return; }
+        try
+        {
+            var composition = ReadImeString(context, GcsCompStr);
+            if (composition.Length > 0) InsertEditorText(composition);
+            _ = ImmNotifyIME(context, NiCompositionStr, CpsCancel, 0);
+        }
+        finally { _ = ImmReleaseContext(hwnd, context); }
+        EndImeComposition();
     }
     private void UpdateImeComposition(IntPtr hwnd, IntPtr compositionFlags)
     {
@@ -1302,6 +1363,8 @@ public partial class NoteWindow : Window
     private static extern int ImmGetCompositionString(IntPtr context, int index, IntPtr buffer, int bufferLength);
     [DllImport("imm32.dll")]
     private static extern bool ImmSetCompositionWindow(IntPtr context, ref CompositionForm form);
+    [DllImport("imm32.dll")]
+    private static extern bool ImmNotifyIME(IntPtr context, int action, int index, int value);
     [StructLayout(LayoutKind.Sequential)]
     private struct DwmMargins { public int Left, Right, Top, Bottom; }
     [DllImport("dwmapi.dll")]
