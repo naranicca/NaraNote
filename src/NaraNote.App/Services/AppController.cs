@@ -159,20 +159,41 @@ public sealed class AppController : IDisposable
     {
         _tray?.Dispose(); _tray = null; if (!State.Settings.UseSystemTray) return;
         var menu = new ContextMenuStrip();
-        menu.Items.Add(UiText.Get("NewNote"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote()));
-        var showAllItem = new ToolStripMenuItem(UiText.Get("ShowAll"));
-        showAllItem.Click += (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(true));
-        menu.Items.Add(showAllItem);
-        menu.Opening += (_, _) => Application.Current.Dispatcher.Invoke(() =>
-        {
-            var hiddenCount = _windows.Values.Count(window => !window.IsVisible);
-            showAllItem.Text = hiddenCount > 0 ? UiText.Format("ShowAllHidden", hiddenCount) : UiText.Get("ShowAll");
-        });
-        menu.Items.Add(UiText.Get("HideAll"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(false)));
-        menu.Items.Add(UiText.Get("Exit"), null, (_, _) => Application.Current.Dispatcher.Invoke(Exit));
+        PopulateTrayMenu(menu);
+        menu.Opening += (_, _) => Application.Current.Dispatcher.Invoke(() => PopulateTrayMenu(menu));
         _appIcon ??= LoadAppIcon();
         _tray = new NotifyIcon { Icon = _appIcon, Text = "NaraNote", Visible = true, ContextMenuStrip = menu };
         _tray.DoubleClick += (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote());
+    }
+    private void PopulateTrayMenu(ContextMenuStrip menu)
+    {
+        menu.Items.Clear();
+        menu.Items.Add(UiText.Get("NewNote"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => NewNote()));
+
+        foreach (var (note, window) in _windows
+                     .Select(pair => (State.Notes.First(note => note.Id == pair.Key), pair.Value))
+                     .Where(pair => !pair.Value.IsVisible)
+                     .OrderByDescending(pair => pair.Item1.LastModifiedUtc))
+        {
+            var hiddenNoteItem = new ToolStripMenuItem(GetTrayNoteTitle(note));
+            hiddenNoteItem.Click += (_, _) => Application.Current.Dispatcher.Invoke(() => Show(note));
+            menu.Items.Add(hiddenNoteItem);
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(UiText.Get("ShowAll"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(true)));
+        menu.Items.Add(UiText.Get("HideAll"), null, (_, _) => Application.Current.Dispatcher.Invoke(() => ToggleAll(false)));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(UiText.Get("Exit"), null, (_, _) => Application.Current.Dispatcher.Invoke(Exit));
+    }
+    private static string GetTrayNoteTitle(NoteData note)
+    {
+        var title = note.Text
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line));
+        if (string.IsNullOrWhiteSpace(title)) title = UiText.Get("NewNote");
+        if (title.Length > 40) title = string.Concat(title.AsSpan(0, 39), "…");
+        return title.Replace("&", "&&", StringComparison.Ordinal);
     }
     private static System.Drawing.Icon LoadAppIcon()
     {
