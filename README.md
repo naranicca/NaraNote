@@ -197,6 +197,14 @@ Requirements:
 - .NET 8 SDK
 - x64 environment
 
+Run `build.bat` from the repository root to restore packages, build Release, run all tests, and create the self-contained single-file `release\NaraNote.exe`. The script uses the repository-local `.dotnet` SDK when available and otherwise uses `dotnet` from `PATH`.
+
+```batch
+build.bat
+```
+
+The equivalent individual commands are:
+
 ```powershell
 dotnet restore NaraNote.sln
 dotnet build NaraNote.sln --configuration Release

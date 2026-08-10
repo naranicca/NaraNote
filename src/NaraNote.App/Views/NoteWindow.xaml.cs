@@ -77,12 +77,8 @@ public partial class NoteWindow : Window
     private InkCanvasEditingMode _inkModeBeforeStylusResize;
     private bool _inkHitTestBeforeStylusResize;
     private bool _inkInputActive;
-    private bool _autoPenInputActive;
-    private StylusPointCollection? _autoPenPoints;
-    private DrawingAttributes? _autoPenAttributes;
     private ContextMenu? _noteContextMenu;
     private MenuItem? _reminderMenuItem;
-    private bool _suppressAutoPenUntilStylusLeaves;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
     private bool _imeCompositionActive;
@@ -94,7 +90,6 @@ public partial class NoteWindow : Window
     private bool _checkingExternalFile;
     private bool _reminderAnimationActive;
     private double _reminderOriginalLeft;
-    private DispatcherTimer? _reminderFocusTimer;
     private SoundPlayer? _reminderSoundPlayer;
     public NoteWindow(NoteData note, AppController controller)
     {
@@ -132,10 +127,6 @@ public partial class NoteWindow : Window
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForObjectSelection), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
         Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
-        Surface.PreviewStylusMove += Surface_PreviewStylusForAutoPen;
-        Surface.PreviewStylusDown += Surface_PreviewStylusForAutoPen;
-        Surface.PreviewStylusUp += Surface_PreviewStylusForAutoPen;
-        Surface.StylusLeave += (_, _) => _suppressAutoPenUntilStylusLeaves = false;
         MouseLeave += (_, _) => { if (_resizeEdge == 0) Mouse.OverrideCursor = null; };
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
@@ -148,8 +139,6 @@ public partial class NoteWindow : Window
         Deactivated += (_, _) =>
         {
             ResetShiftLineMode(); FinishStylusWindowDrag();
-            if (_reminderAnimationActive)
-                _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Send, new Action(ForceReminderFocus));
         };
         RememberExportFileVersion();
         _loading = false;
@@ -213,13 +202,6 @@ public partial class NoteWindow : Window
         _reminderOriginalLeft = Left;
         _reminderAnimationActive = true;
         ForceReminderFocus();
-        _reminderFocusTimer ??= new DispatcherTimer(DispatcherPriority.Send)
-        {
-            Interval = TimeSpan.FromMilliseconds(350)
-        };
-        _reminderFocusTimer.Tick -= ReminderFocusTimer_Tick;
-        _reminderFocusTimer.Tick += ReminderFocusTimer_Tick;
-        _reminderFocusTimer.Start();
         StartReminderSound();
         var rotation = new RotateTransform();
         Frame.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
@@ -298,7 +280,6 @@ public partial class NoteWindow : Window
             rotation.BeginAnimation(RotateTransform.AngleProperty, null);
         Frame.RenderTransform = Transform.Identity;
         _reminderAnimationActive = false;
-        _reminderFocusTimer?.Stop();
         StopReminderSound();
         Topmost = _note.IsAlwaysOnTop;
         if (applyAutoHide && _note.Reminder.IsEnabled && _note.Reminder.AutoHide)
@@ -481,7 +462,6 @@ public partial class NoteWindow : Window
         Ink.EditingMode = InkCanvasEditingMode.None;
         Ink.IsHitTestVisible = false;
         _inkInputActive = false;
-        CancelAutoPenInput();
         ResetShiftLineMode();
         Stylus.Capture(this, CaptureMode.SubTree);
         e.Handled = true;
@@ -595,7 +575,7 @@ public partial class NoteWindow : Window
         }
         else if (e.Key == Key.Escape) ClearObjectSelection();
     }
-    private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive || _autoPenInputActive;
+    private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive;
     private void SwitchToPenMode()
     {
         ClearObjectSelection();
@@ -608,8 +588,6 @@ public partial class NoteWindow : Window
         Ink.EditingMode = InkCanvasEditingMode.None;
         Ink.IsHitTestVisible = false;
         _inkInputActive = false;
-        CancelAutoPenInput();
-        _suppressAutoPenUntilStylusLeaves = true;
         ResetShiftLineMode();
         ClearObjectSelection();
         Editor.Focus();
@@ -650,76 +628,6 @@ public partial class NoteWindow : Window
         _lastInkAutoExpandUtc = now;
         if (expandWidth) Width = Math.Min(maximumDimension, Width + expansion);
         if (expandHeight) Height = Math.Min(maximumDimension, Height + expansion);
-    }
-    private void Surface_PreviewStylusForAutoPen(object sender, StylusEventArgs e)
-    {
-        if (e.StylusDevice.TabletDevice.Type != TabletDeviceType.Stylus) return;
-        if (_suppressAutoPenUntilStylusLeaves)
-        {
-            if (e.RoutedEvent == Stylus.PreviewStylusUpEvent)
-            {
-                _suppressAutoPenUntilStylusLeaves = false;
-                return;
-            }
-            if (e.RoutedEvent == Stylus.PreviewStylusDownEvent)
-                _suppressAutoPenUntilStylusLeaves = false;
-            else
-                return;
-        }
-        if (_autoPenInputActive)
-        {
-            AppendAutoPenPoints(e.GetStylusPoints(Ink));
-            if (e.RoutedEvent == Stylus.PreviewStylusMoveEvent) AutoExpandForInk(e.GetPosition(Ink));
-            if (e.RoutedEvent == Stylus.PreviewStylusUpEvent) CompleteAutoPenStroke();
-            e.Handled = true;
-            return;
-        }
-        if (Ink.EditingMode != InkCanvasEditingMode.None) return;
-        Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.Ink;
-        if (e.RoutedEvent != Stylus.PreviewStylusDownEvent) return;
-        var initialPoints = e.GetStylusPoints(Ink);
-        _autoPenInputActive = true;
-        _autoPenPoints = new StylusPointCollection(initialPoints.Description, Math.Max(1, initialPoints.Count));
-        _autoPenAttributes = Ink.DefaultDrawingAttributes.Clone();
-        AppendAutoPenPoints(initialPoints);
-        Stylus.Capture(Surface, CaptureMode.SubTree);
-        e.Handled = true;
-    }
-    private void AppendAutoPenPoints(StylusPointCollection points)
-    {
-        if (_autoPenPoints is null) return;
-        foreach (var point in points)
-        {
-            if (_autoPenPoints.Count > 0 && (point.ToPoint() - _autoPenPoints[^1].ToPoint()).LengthSquared < .01) continue;
-            _autoPenPoints.Add(point);
-        }
-    }
-    private void CancelAutoPenInput()
-    {
-        _autoPenInputActive = false;
-        _autoPenPoints = null;
-        _autoPenAttributes = null;
-        if (ReferenceEquals(Stylus.Captured, Surface)) Stylus.Capture(null);
-    }
-    private void CompleteAutoPenStroke()
-    {
-        var points = _autoPenPoints;
-        var attributes = _autoPenAttributes;
-        _autoPenInputActive = false;
-        _autoPenPoints = null;
-        _autoPenAttributes = null;
-        if (ReferenceEquals(Stylus.Captured, Surface)) Stylus.Capture(null);
-        if (points is null || points.Count == 0 || attributes is null) return;
-        if (points.Count == 1)
-        {
-            var point = points[0];
-            point.X += .1;
-            point.Y += .1;
-            points.Add(point);
-        }
-        var stroke = new Stroke(points) { DrawingAttributes = attributes };
-        Ink.Strokes.Add(stroke);
-        ProcessInkStroke(stroke);
     }
     private void Ink_PreviewMouseDownForStraightLine(object sender, MouseButtonEventArgs e)
     {
