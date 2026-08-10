@@ -67,12 +67,19 @@ public static class WindowPlacement
         return new(x, y, width, height);
     }
 
-    public static RectData FindNonOverlapping(RectData desired, RectData workArea, IEnumerable<RectData> occupied, double gap = 12)
+    public static RectData FindNonOverlapping(RectData desired, RectData workArea, IEnumerable<RectData> occupied, double gap = 12, double edgeMargin = 0)
     {
-        desired = ClampFullyVisible(desired, workArea);
-        var blocked = occupied.Where(rect => Intersects(rect, workArea)).ToList();
-        var xs = new HashSet<double> { desired.X, workArea.X, workArea.X + workArea.Width - desired.Width };
-        var ys = new HashSet<double> { desired.Y, workArea.Y, workArea.Y + workArea.Height - desired.Height };
+        var horizontalMargin = Math.Min(Math.Max(0, edgeMargin), Math.Max(0, (workArea.Width - 220) / 2));
+        var verticalMargin = Math.Min(Math.Max(0, edgeMargin), Math.Max(0, (workArea.Height - 160) / 2));
+        var placementArea = new RectData(
+            workArea.X + horizontalMargin,
+            workArea.Y + verticalMargin,
+            workArea.Width - horizontalMargin * 2,
+            workArea.Height - verticalMargin * 2);
+        desired = ClampFullyVisible(desired, placementArea);
+        var blocked = occupied.Where(rect => Intersects(rect, placementArea)).ToList();
+        var xs = new HashSet<double> { desired.X, placementArea.X, placementArea.X + placementArea.Width - desired.Width };
+        var ys = new HashSet<double> { desired.Y, placementArea.Y, placementArea.Y + placementArea.Height - desired.Height };
         foreach (var rect in blocked)
         {
             xs.Add(rect.X + rect.Width + gap); xs.Add(rect.X - desired.Width - gap); xs.Add(rect.X);
@@ -80,22 +87,45 @@ public static class WindowPlacement
         }
         var candidates = from x in xs from y in ys
                          let candidate = new RectData(x, y, desired.Width, desired.Height)
-                         where FullyInside(candidate, workArea)
+                         where FullyInside(candidate, placementArea)
                          orderby DistanceSquared(candidate, desired)
                          select candidate;
-        var available = candidates.FirstOrDefault(candidate => blocked.All(rect => !Intersects(candidate, rect)));
+        var available = candidates.FirstOrDefault(candidate => blocked.All(rect => !Intersects(candidate, Expand(rect, gap))));
         if (available.Width > 0 && available.Height > 0) return available;
-        for (var y = workArea.Y; y <= workArea.Y + workArea.Height - desired.Height; y += 8)
-            for (var x = workArea.X; x <= workArea.X + workArea.Width - desired.Width; x += 8)
+
+        RectData? bestFallback = null;
+        var bestOverlap = double.MaxValue;
+        var bestDistance = double.MaxValue;
+        for (var y = placementArea.Y; y <= placementArea.Y + placementArea.Height - desired.Height; y += 8)
+            for (var x = placementArea.X; x <= placementArea.X + placementArea.Width - desired.Width; x += 8)
             {
                 var candidate = new RectData(x, y, desired.Width, desired.Height);
-                if (blocked.All(rect => !Intersects(candidate, rect))) return candidate;
+                if (blocked.All(rect => !Intersects(candidate, Expand(rect, gap)))) return candidate;
+                var overlap = blocked.Sum(rect => OverlapArea(candidate, Expand(rect, gap)));
+                if (blocked.Any(rect => SamePosition(candidate, rect))) overlap += candidate.Width * candidate.Height;
+                var distance = DistanceSquared(candidate, desired);
+                if (overlap < bestOverlap || (Math.Abs(overlap - bestOverlap) < 0.01 && distance < bestDistance))
+                {
+                    bestFallback = candidate;
+                    bestOverlap = overlap;
+                    bestDistance = distance;
+                }
             }
-        return desired;
+        return bestFallback ?? desired;
     }
+
+    private static RectData Expand(RectData rect, double amount) => new(
+        rect.X - amount,
+        rect.Y - amount,
+        rect.Width + amount * 2,
+        rect.Height + amount * 2);
 
     private static bool FullyInside(RectData rect, RectData area) => rect.X >= area.X && rect.Y >= area.Y && rect.X + rect.Width <= area.X + area.Width && rect.Y + rect.Height <= area.Y + area.Height;
     private static bool Intersects(RectData a, RectData b) => a.X < b.X + b.Width && a.X + a.Width > b.X && a.Y < b.Y + b.Height && a.Y + a.Height > b.Y;
+    private static bool SamePosition(RectData a, RectData b) => Math.Abs(a.X - b.X) < 0.01 && Math.Abs(a.Y - b.Y) < 0.01;
+    private static double OverlapArea(RectData a, RectData b) =>
+        Math.Max(0, Math.Min(a.X + a.Width, b.X + b.Width) - Math.Max(a.X, b.X)) *
+        Math.Max(0, Math.Min(a.Y + a.Height, b.Y + b.Height) - Math.Max(a.Y, b.Y));
     private static double DistanceSquared(RectData a, RectData b) => Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2);
 }
 

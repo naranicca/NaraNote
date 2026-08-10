@@ -221,7 +221,8 @@ public sealed class AppController : IDisposable
             .Where(pair => Screen.FromHandle(new WindowInteropHelper(pair.Value).Handle).DeviceName == screen.DeviceName)
             .Select(pair => State.Notes.First(noteData => noteData.Id == pair.Key))
             .Select(existing => new RectData(existing.Left, existing.Top, existing.Width, existing.Height));
-        var placed = NaraNote.Core.Utilities.WindowPlacement.FindNonOverlapping(new(note.Left, note.Top, note.Width, note.Height), area, occupied);
+        var placed = NaraNote.Core.Utilities.WindowPlacement.FindNonOverlapping(
+            new(note.Left, note.Top, note.Width, note.Height), area, occupied, edgeMargin: 12);
         note.Left = placed.X; note.Top = placed.Y; note.Width = placed.Width; note.Height = placed.Height;
     }
     private (Screen Screen, RectData WorkArea) GetMonitorWorkArea(NoteData? anchor)

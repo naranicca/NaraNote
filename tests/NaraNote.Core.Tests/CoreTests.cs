@@ -202,6 +202,41 @@ public sealed class CoreTests
         Assert.All(occupied, rect => Assert.False(result.X < rect.X + rect.Width && result.X + result.Width > rect.X && result.Y < rect.Y + rect.Height && result.Y + result.Height > rect.Y));
     }
 
+    [Fact]
+    public void New_window_keeps_gap_from_existing_notes()
+    {
+        const double gap = 12;
+        var occupied = new[] { new RectData(100, 100, 360, 320), new RectData(472, 100, 360, 320) };
+        var result = WindowPlacement.FindNonOverlapping(new(472, 100, 360, 320), new(0, 0, 1920, 1080), occupied, gap);
+
+        Assert.All(occupied, note => Assert.True(
+            result.X + result.Width <= note.X - gap ||
+            result.X >= note.X + note.Width + gap ||
+            result.Y + result.Height <= note.Y - gap ||
+            result.Y >= note.Y + note.Height + gap));
+    }
+
+    [Fact]
+    public void New_window_uses_least_overlapping_position_when_no_empty_space_exists()
+    {
+        var existing = new RectData(0, 0, 360, 320);
+        var result = WindowPlacement.FindNonOverlapping(existing, new(0, 0, 600, 400), [existing], gap: 12);
+
+        Assert.False(result.X == existing.X && result.Y == existing.Y);
+        Assert.True(result.X > existing.X || result.Y > existing.Y);
+    }
+
+    [Fact]
+    public void New_window_keeps_margin_from_every_monitor_edge()
+    {
+        var area = new RectData(-1920, -200, 1920, 1080);
+        var result = WindowPlacement.FindNonOverlapping(new(-2500, 900, 360, 320), area, [], edgeMargin: 12);
+        Assert.True(result.X >= area.X + 12);
+        Assert.True(result.Y >= area.Y + 12);
+        Assert.True(result.X + result.Width <= area.X + area.Width - 12);
+        Assert.True(result.Y + result.Height <= area.Y + area.Height - 12);
+    }
+
     [Fact] public void Contrast_handles_dark_and_light() { Assert.True(ColorContrast.UseLightForeground("#111111")); Assert.False(ColorContrast.UseLightForeground("#FFFFFF")); }
 
     [Fact]
