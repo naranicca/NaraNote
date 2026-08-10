@@ -100,7 +100,7 @@
    <Grid x:Name="TitleArea" Grid.Row="0" Background="Transparent" MouseLeftButtonDown="TitleArea_MouseLeftButtonDown">
     <Grid Margin="80,0,62,0" HorizontalAlignment="Stretch" VerticalAlignment="Center">
      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <TextBlock x:Name="ExportPathTextBlock" Grid.Column="0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="11" Opacity="0.72"/>
+     <TextBlock x:Name="ExportPathTextBlock" Grid.Column="0" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" Opacity="0.72"/>
      <TextBlock x:Name="ExportDirtyIndicator" Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center" Text="●" FontSize="8" FontWeight="SemiBold" Opacity="0.82" Visibility="Collapsed" ToolTip="{loc:Loc DirtyExport}"/>
     </Grid>
     <Button x:Name="NewNoteButton" Style="{StaticResource HeaderButtonStyle}" HorizontalAlignment="Left" ToolTip="{loc:Loc NewNote}" Click="New_Click">

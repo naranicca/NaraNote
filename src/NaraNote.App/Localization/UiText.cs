@@ -73,6 +73,11 @@ public static class UiText
 
     static UiText()
     {
+        Add("en", ("Search","Search"));
+        Add("ko", ("Search","\uac80\uc0c9"));
+        Add("fr", ("Search","Rechercher"));
+        Add("es", ("Search","Buscar"));
+        Add("vi", ("Search","T\u00ecm ki\u1ebfm"));
         Add("ko", ("AutoUpdate","\uc5c5\ub370\uc774\ud2b8 \uc790\ub3d9 \ud655\uc778"),("CheckNow","\uc9c0\uae08 \ud655\uc778"),("CurrentVersion","\ud604\uc7ac \ubc84\uc804: {0}"),("UpdateCurrent","\uc774\ubbf8 \ucd5c\uc2e0 \ubc84\uc804\uc785\ub2c8\ub2e4."),("UpdateAvailable","NaraNote {0} \ubc84\uc804\uc744 \uc0ac\uc6a9\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4. \ub178\ud2b8\ub97c \uc800\uc7a5\ud558\uace0 \uc9c0\uae08 \uc124\uce58\ud560\uae4c\uc694?"),("UpdateFailed","\uc5c5\ub370\uc774\ud2b8\ub97c \ud655\uc778\ud558\uac70\ub098 \uc124\uce58\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. \ub098\uc911\uc5d0 \ub2e4\uc2dc \uc2dc\ub3c4\ud574 \uc8fc\uc138\uc694."));
         Add("fr", ("AutoUpdate","Rechercher automatiquement les mises \u00e0 jour"),("CheckNow","V\u00e9rifier"),("CurrentVersion","Version actuelle : {0}"),("UpdateCurrent","Vous utilisez d\u00e9j\u00e0 la derni\u00e8re version."),("UpdateAvailable","NaraNote {0} est disponible. Enregistrer les notes et l'installer maintenant ?"),("UpdateFailed","Impossible de rechercher ou d'installer la mise \u00e0 jour. R\u00e9essayez plus tard."));
         Add("es", ("AutoUpdate","Buscar actualizaciones autom\u00e1ticamente"),("CheckNow","Buscar ahora"),("CurrentVersion","Versi\u00f3n actual: {0}"),("UpdateCurrent","Ya tienes la versi\u00f3n m\u00e1s reciente."),("UpdateAvailable","NaraNote {0} est\u00e1 disponible. \u00bfGuardar las notas e instalarla ahora?"),("UpdateFailed","No se pudo buscar o instalar la actualizaci\u00f3n. Int\u00e9ntalo de nuevo m\u00e1s tarde."));

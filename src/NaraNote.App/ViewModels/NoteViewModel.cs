@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using NaraNote.Core.Models;
 
@@ -9,16 +10,17 @@ public sealed class NoteViewModel(NoteData model, Action changed) : INotifyPrope
     public NoteData Model { get; } = model;
     public event PropertyChangedEventHandler? PropertyChanged;
     public string Text { get => Model.Text; set { if (Model.Text == value) return; Model.Text = value; Touch(); Notify(); } }
-    public double FontSize { get => Model.FontSize; set { Model.FontSize = Math.Clamp(value, 8, 72); Touch(); Notify(); } }
-    public string FontFamily { get => Model.FontFamily; set { Model.FontFamily = value; Touch(); Notify(); } }
-    public string Color { get => Model.Color; set { Model.Color = value; Touch(); Notify(); } }
-    public void Touch()
+    public double FontSize { get => Model.FontSize; set { Model.FontSize = Math.Clamp(value, 8, 72); TouchExportMetadata(); Notify(); } }
+    public string FontFamily { get => Model.FontFamily; set { Model.FontFamily = value; TouchExportMetadata(); Notify(); } }
+    public string Color { get => Model.Color; set { Model.Color = value; Touch(markExportDirty: false); Notify(); } }
+    public void Touch(bool markExportDirty = true)
     {
         Model.LastModifiedUtc = DateTimeOffset.UtcNow;
-        if (!string.IsNullOrWhiteSpace(Model.ExportFilePath)) Model.IsExportDirty = true;
+        if (markExportDirty && !string.IsNullOrWhiteSpace(Model.ExportFilePath)) Model.IsExportDirty = true;
         changed();
         Notify(nameof(Model.IsExportDirty));
     }
+    public void TouchExportMetadata() => Touch(string.Equals(Path.GetExtension(Model.ExportFilePath), ".naranote", StringComparison.OrdinalIgnoreCase));
     public void MarkExported(string path)
     {
         Model.ExportFilePath = path;

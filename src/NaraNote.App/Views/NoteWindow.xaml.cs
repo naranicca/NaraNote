@@ -133,8 +133,8 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDragEnterEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
-        LocationChanged += (_, _) => { if (_reminderAnimationActive) return; _note.Left = Left; _note.Top = Top; _vm.Touch(); };
-        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateSearchBarLayout(); UpdateExportPathDisplay(); _vm.Touch(); };
+        LocationChanged += (_, _) => { if (_reminderAnimationActive) return; _note.Left = Left; _note.Top = Top; TouchLayout(); };
+        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateSearchBarLayout(); UpdateExportPathDisplay(); TouchLayout(); };
         Activated += NoteWindow_Activated;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
@@ -349,7 +349,7 @@ public partial class NoteWindow : Window
         _note.IsAlwaysOnTop = !_note.IsAlwaysOnTop;
         Topmost = _note.IsAlwaysOnTop;
         ApplyAppearance();
-        _vm.Touch();
+        _vm.Touch(markExportDirty: false);
     }
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
@@ -423,7 +423,7 @@ public partial class NoteWindow : Window
         if (!_stylusWindowDragActive) return;
         _stylusWindowDragActive = false;
         if (ReferenceEquals(Stylus.Captured, TitleArea)) Stylus.Capture(null);
-        _vm.Touch();
+        TouchLayout();
     }
     private static T? FindAncestor<T>(DependencyObject source) where T : DependencyObject
     {
@@ -507,7 +507,7 @@ public partial class NoteWindow : Window
         if (Mouse.Captured is not null) Mouse.Capture(null);
         if (Stylus.Captured is not null) Stylus.Capture(null);
         Mouse.OverrideCursor = null;
-        _vm.Touch();
+        TouchLayout();
         if (!restoreStylusMode) return;
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
         {
@@ -538,6 +538,11 @@ public partial class NoteWindow : Window
         6 or 9 => Cursors.SizeNESW, _ => null
     };
     private void Editor_TextChanged(object? sender, EventArgs e) { if (!_loading) _vm.Text = Editor.Text; }
+    private void TouchLayout()
+    {
+        _note.LastModifiedUtc = DateTimeOffset.UtcNow;
+        _controller.ScheduleSave();
+    }
 
     private void OpenSearch()
     {
@@ -1196,7 +1201,7 @@ public partial class NoteWindow : Window
                 _note.SyntaxLanguage = value;
                 _note.IsSyntaxLanguageExplicit = value != "Auto";
                 ApplySyntaxHighlighting();
-                _vm.Touch();
+                _vm.TouchExportMetadata();
                 if (value == "Auto") ScheduleSyntaxDetection();
             };
             items.Add(item);
@@ -1218,7 +1223,7 @@ public partial class NoteWindow : Window
             if (detected is null || detected.Confidence < .75) return;
             _note.SyntaxLanguage = detected.Language;
             ApplySyntaxHighlighting();
-            _vm.Touch();
+            _vm.TouchExportMetadata();
             if (preserveExportBaseline)
             {
                 _note.IsExportDirty = false;
@@ -1270,6 +1275,9 @@ public partial class NoteWindow : Window
         var hideNote = new MenuItem { Header = UiText.Get("HideNote") };
         hideNote.Click += (_, _) => HideCurrentNote();
         menu.Items.Add(hideNote);
+        var search = new MenuItem { Header = UiText.Get("Search"), InputGestureText = "Ctrl+F" };
+        search.Click += (_, _) => OpenSearch();
+        menu.Items.Add(search);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = UiText.Get("Undo"), Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
         menu.Items.Add(new MenuItem { Header = UiText.Get("Redo"), Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
