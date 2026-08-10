@@ -91,6 +91,7 @@ public partial class NoteWindow : Window
     private bool _reminderAnimationActive;
     private double _reminderOriginalLeft;
     private SoundPlayer? _reminderSoundPlayer;
+    private int _searchSelectionStart = -1;
     public NoteWindow(NoteData note, AppController controller)
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
@@ -133,7 +134,7 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
         LocationChanged += (_, _) => { if (_reminderAnimationActive) return; _note.Left = Left; _note.Top = Top; _vm.Touch(); };
-        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateExportPathDisplay(); _vm.Touch(); };
+        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateSearchBarLayout(); UpdateExportPathDisplay(); _vm.Touch(); };
         Activated += NoteWindow_Activated;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
@@ -538,6 +539,96 @@ public partial class NoteWindow : Window
     };
     private void Editor_TextChanged(object? sender, EventArgs e) { if (!_loading) _vm.Text = Editor.Text; }
 
+    private void OpenSearch()
+    {
+        UpdateSearchBarLayout();
+        SearchBar.Visibility = Visibility.Visible;
+        SearchTextBox.Focus();
+        SearchTextBox.SelectAll();
+    }
+    private void CloseSearch()
+    {
+        SearchBar.Visibility = Visibility.Collapsed;
+        _searchSelectionStart = -1;
+        Editor.Focus();
+    }
+    private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _searchSelectionStart = -1;
+        FindSearchMatch(false);
+    }
+    private void SearchOptionChanged(object sender, RoutedEventArgs e)
+    {
+        _searchSelectionStart = -1;
+        FindSearchMatch(false);
+    }
+    private void SearchTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key is Key.Enter or Key.Return)
+        {
+            FindSearchMatch(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+            e.Handled = true;
+        }
+    }
+    private void SearchPrevious_Click(object sender, RoutedEventArgs e) => FindSearchMatch(true);
+    private void SearchNext_Click(object sender, RoutedEventArgs e) => FindSearchMatch(false);
+    private void SearchClose_Click(object sender, RoutedEventArgs e) => CloseSearch();
+    private void UpdateSearchBarLayout()
+    {
+        if (SearchBar is null || ActualWidth <= 0) return;
+        SearchBar.Width = Math.Max(120, Math.Min(300, ActualWidth - 24));
+    }
+    private void FindSearchMatch(bool previous)
+    {
+        var query = SearchTextBox.Text;
+        var text = Editor.Text;
+        if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(text)) return;
+        var comparison = SearchCaseCheckBox.IsChecked == true
+            ? StringComparison.CurrentCulture
+            : StringComparison.CurrentCultureIgnoreCase;
+        var start = _searchSelectionStart >= 0
+            ? (previous ? _searchSelectionStart - 1 : _searchSelectionStart + query.Length)
+            : (previous ? text.Length : Math.Clamp(Editor.SelectionStart, 0, text.Length));
+        var index = FindSearchIndex(text, query, start, previous, comparison);
+        if (index < 0)
+        {
+            index = FindSearchIndex(text, query, previous ? text.Length : 0, previous, comparison);
+        }
+        if (index < 0) return;
+        _searchSelectionStart = index;
+        Editor.Select(index, query.Length);
+        var line = Editor.Document.GetLineByOffset(index);
+        Editor.ScrollToLine(line.LineNumber);
+    }
+    private int FindSearchIndex(string text, string query, int start, bool previous, StringComparison comparison)
+    {
+        var wholeWord = SearchWordCheckBox.IsChecked == true;
+        if (!previous)
+        {
+            var index = text.IndexOf(query, Math.Clamp(start, 0, text.Length), comparison);
+            while (index >= 0 && wholeWord && !IsWholeWord(text, index, query.Length))
+                index = text.IndexOf(query, index + Math.Max(1, query.Length), comparison);
+            return index;
+        }
+        if (text.Length < query.Length) return -1;
+        var backwardStart = Math.Clamp(start, query.Length - 1, text.Length - 1);
+        var previousIndex = text.LastIndexOf(query, backwardStart, comparison);
+        while (previousIndex >= 0 && wholeWord && !IsWholeWord(text, previousIndex, query.Length))
+        {
+            if (previousIndex == 0) return -1;
+            previousIndex = text.LastIndexOf(query, previousIndex - 1, comparison);
+        }
+        return previousIndex;
+    }
+    private static bool IsWholeWord(string text, int index, int length)
+    {
+        var beforeIsWord = index > 0 && IsWordCharacter(text[index - 1]);
+        var end = index + length;
+        var afterIsWord = end < text.Length && IsWordCharacter(text[end]);
+        return !beforeIsWord && !afterIsWord;
+    }
+    private static bool IsWordCharacter(char value) => char.IsLetterOrDigit(value) || value == '_';
+
     private void Editor_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -558,10 +649,12 @@ public partial class NoteWindow : Window
             return;
         }
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
+        var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        if (ctrl && e.Key == Key.F) { OpenSearch(); e.Handled = true; return; }
+        if (e.Key == Key.Escape && SearchBar.Visibility == Visibility.Visible) { CloseSearch(); e.Handled = true; return; }
         if (e.Key == Key.F8 || e.SystemKey == Key.F8) { SwitchToPenMode(); e.Handled = true; return; }
         if (e.Key == Key.F10 || e.SystemKey == Key.F10) { OpenNoteMenu(true); e.Handled = true; return; }
         if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; return; }
-        var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         if (ctrl && e.Key == Key.S) { _ = ExportCurrentNoteAsync(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Add || e.Key == Key.OemPlus)) { ChangePenThickness(1); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { ChangePenThickness(-1); e.Handled = true; }

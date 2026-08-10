@@ -62,10 +62,15 @@ public sealed class AppController : IDisposable
         {
             var path = Encoding.UTF8.GetString(Convert.FromBase64String(command[5..]));
             if (string.IsNullOrWhiteSpace(path)) return;
-            var note = NewNote();
-            if (_windows.TryGetValue(note.Id, out var window)) window.OpenDroppedFile(path);
+            OpenFileInNewNote(path);
         }
         catch (FormatException ex) { _logger.Error("SingleInstance", ex); }
+    }
+    public void OpenFileInNewNote(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var note = NewNote();
+        if (_windows.TryGetValue(note.Id, out var window)) window.OpenDroppedFile(path);
     }
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
     public void Show(NoteData note, bool clearHiddenState = true)

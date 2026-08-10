@@ -16,7 +16,9 @@ public partial class App : System.Windows.Application
     {
         if (!SingleInstanceService.TryAcquire(out _singleInstance))
         {
-            await SingleInstanceService.SendToExistingAsync(e.Args.FirstOrDefault());
+            var fileArgument = e.Args.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(fileArgument)) fileArgument = Path.GetFullPath(fileArgument);
+            await SingleInstanceService.SendToExistingAsync(fileArgument);
             Shutdown();
             return;
         }
@@ -34,6 +36,12 @@ public partial class App : System.Windows.Application
         logger.Info("Startup", "Loading application state.");
         await Controller.StartAsync();
         _singleInstance!.Start(Controller);
+        if (e.Args.FirstOrDefault() is { Length: > 0 } initialFile)
+        {
+            var filePath = Path.GetFullPath(initialFile);
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                new Action(() => Controller.OpenFileInNewNote(filePath)));
+        }
         logger.Info("Startup", "Initial note windows created.");
         if (Controller.State.Settings.CheckForUpdatesAutomatically)
             _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,

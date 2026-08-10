@@ -36,6 +36,25 @@
    <Setter Property="StrokeStartLineCap" Value="Round"/>
    <Setter Property="StrokeEndLineCap" Value="Round"/>
   </Style>
+  <Style x:Key="SearchButtonStyle" TargetType="Button">
+   <Setter Property="Width" Value="24"/><Setter Property="Height" Value="28"/><Setter Property="Padding" Value="0"/>
+   <Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/>
+   <Setter Property="FontSize" Value="16"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+    <Border x:Name="SearchButtonBorder" Background="{TemplateBinding Background}" CornerRadius="14"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+    <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SearchButtonBorder" Property="Background" Value="#18000000"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="SearchButtonBorder" Property="Background" Value="#30000000"/></Trigger></ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SearchOptionStyle" TargetType="CheckBox">
+   <Setter Property="Width" Value="28"/><Setter Property="Height" Value="28"/><Setter Property="FontSize" Value="11"/>
+   <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+   <Setter Property="Foreground" Value="#FF3C3C43"/><Setter Property="Background" Value="Transparent"/>
+   <Setter Property="BorderBrush" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/>
+   <Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+    <Border x:Name="OptionBorder" Background="{TemplateBinding Background}" CornerRadius="8"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+    <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="OptionBorder" Property="Background" Value="#18000000"/></Trigger><Trigger Property="IsChecked" Value="True"><Setter TargetName="OptionBorder" Property="Background" Value="#FF2F7DE1"/><Setter Property="Foreground" Value="White"/></Trigger></ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
   <!-- Keep the scrollbar inside the 6-DIP window resize grip so scrolling and resizing never compete. -->
   <Style TargetType="ScrollBar">
    <Setter Property="Width" Value="11"/>
@@ -135,6 +154,20 @@
     <Canvas x:Name="ImeCompositionCanvas" IsHitTestVisible="False" ClipToBounds="True"/>
     <Canvas x:Name="ObjectCanvas" Background="{x:Null}" ClipToBounds="True"/>
     <InkCanvas x:Name="Ink" Background="Transparent" EditingMode="None" IsHitTestVisible="False" StrokeCollected="Ink_StrokeCollected"/>
+    <Border x:Name="SearchBar" Width="300" Height="38" Margin="8,8,8,0" HorizontalAlignment="Center" VerticalAlignment="Top" Visibility="Collapsed"
+            Background="#F8FFFFFF" BorderBrush="#38000000" BorderThickness="1" CornerRadius="12" Panel.ZIndex="100">
+     <Border.Effect><DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.18"/></Border.Effect>
+     <Grid Margin="5,0,4,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBox x:Name="SearchTextBox" Grid.Column="0" Margin="4,0,0,0" VerticalContentAlignment="Center" BorderThickness="0" Background="Transparent" FontSize="13"
+               ToolTip="Search" TextChanged="SearchTextBox_TextChanged" PreviewKeyDown="SearchTextBox_PreviewKeyDown"/>
+      <CheckBox x:Name="SearchCaseCheckBox" Grid.Column="1" Style="{StaticResource SearchOptionStyle}" Content="Aa" ToolTip="Match case" Checked="SearchOptionChanged" Unchecked="SearchOptionChanged"/>
+      <CheckBox x:Name="SearchWordCheckBox" Grid.Column="2" Style="{StaticResource SearchOptionStyle}" Content="W" ToolTip="Match whole word" Checked="SearchOptionChanged" Unchecked="SearchOptionChanged"/>
+      <Button Grid.Column="3" Style="{StaticResource SearchButtonStyle}" Content="‹" ToolTip="Previous match" Click="SearchPrevious_Click"/>
+      <Button Grid.Column="4" Style="{StaticResource SearchButtonStyle}" Content="›" ToolTip="Next match" Click="SearchNext_Click"/>
+      <Button Grid.Column="5" Style="{StaticResource SearchButtonStyle}" Content="×" ToolTip="Close search" Click="SearchClose_Click"/>
+     </Grid>
+    </Border>
    </Grid>
   </Grid>
  </Border>
