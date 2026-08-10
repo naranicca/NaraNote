@@ -48,7 +48,7 @@ namespace NaraNote.App.Views;
 
 public partial class NoteWindow : Window
 {
-    private const int WmKillFocus = 0x0008, WmNcHitTest = 0x0084, WmImeStartComposition = 0x010D, WmImeEndComposition = 0x010E, WmImeComposition = 0x010F, Grip = 16;
+    private const int WmKillFocus = 0x0008, WmNcHitTest = 0x0084, WmImeStartComposition = 0x010D, WmImeEndComposition = 0x010E, WmImeComposition = 0x010F, Grip = 6;
     private const int GcsCompStr = 0x0008, GcsResultStr = 0x0800, CfsForcePosition = 0x0020;
     private const int NiCompositionStr = 0x0015, CpsCancel = 0x0004;
     private const int DwmwaWindowCornerPreference = 33, DwmwaBorderColor = 34;

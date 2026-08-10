@@ -1,6 +1,6 @@
 <Window x:Class="NaraNote.App.Views.NoteWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
+ xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit" xmlns:controls="clr-namespace:NaraNote.App.Controls"
  xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" xmlns:loc="clr-namespace:NaraNote.App.Localization"
  Title="NaraNote" WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False" Background="#FFF3A6" Width="360" Height="320"
  MinWidth="220" MinHeight="160" ShowInTaskbar="True" AllowDrop="True" Icon="/NaraNote;component/Resources/NaraNote.ico">
@@ -35,6 +35,44 @@
    <Setter Property="StrokeThickness" Value="2"/>
    <Setter Property="StrokeStartLineCap" Value="Round"/>
    <Setter Property="StrokeEndLineCap" Value="Round"/>
+  </Style>
+  <!-- Keep the scrollbar inside the 6-DIP window resize grip so scrolling and resizing never compete. -->
+  <Style TargetType="ScrollBar">
+   <Setter Property="Width" Value="11"/>
+   <Setter Property="MinWidth" Value="11"/>
+   <Setter Property="Margin" Value="0,5,6,5"/>
+   <Setter Property="Background" Value="Transparent"/>
+   <Setter Property="Opacity" Value="0.34"/>
+   <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+   <Setter Property="Template">
+    <Setter.Value>
+     <ControlTemplate TargetType="ScrollBar">
+      <Grid Background="Transparent">
+       <Track x:Name="PART_Track" IsDirectionReversed="True">
+        <Track.DecreaseRepeatButton>
+         <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" Background="Transparent">
+          <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+         </RepeatButton>
+        </Track.DecreaseRepeatButton>
+        <Track.Thumb>
+         <controls:CapsuleThumb Width="6" MinimumVisualLength="0" Background="#9A3C3C43"
+                                HoverBackground="#C83C3C43" DragBackground="#E63C3C43"
+                                Template="{x:Null}" FocusVisualStyle="{x:Null}"
+                                ClipToBounds="False" SnapsToDevicePixels="False"/>
+        </Track.Thumb>
+        <Track.IncreaseRepeatButton>
+         <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" Background="Transparent">
+          <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+         </RepeatButton>
+        </Track.IncreaseRepeatButton>
+       </Track>
+      </Grid>
+      <ControlTemplate.Triggers>
+       <Trigger Property="IsMouseOver" Value="True"><Setter Property="Opacity" Value="0.82"/></Trigger>
+      </ControlTemplate.Triggers>
+     </ControlTemplate>
+    </Setter.Value>
+   </Setter>
   </Style>
  </Window.Resources>
  <Border x:Name="Frame" BorderBrush="Transparent" BorderThickness="0" CornerRadius="0">
