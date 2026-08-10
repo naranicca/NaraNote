@@ -11,8 +11,15 @@ namespace NaraNote.App;
 public partial class App : System.Windows.Application
 {
     internal AppController Controller { get; private set; } = null!;
+    private SingleInstanceService? _singleInstance;
     protected override async void OnStartup(StartupEventArgs e)
     {
+        if (!SingleInstanceService.TryAcquire(out _singleInstance))
+        {
+            await SingleInstanceService.SendToExistingAsync(e.Args.FirstOrDefault());
+            Shutdown();
+            return;
+        }
         base.OnStartup(e);
         var logger = new FileLogger();
         DispatcherUnhandledException += (_, args) => { logger.Error("UI", args.Exception); args.Handled = true; System.Windows.MessageBox.Show(UiText.Get("UnexpectedError"), "NaraNote"); };
@@ -26,10 +33,11 @@ public partial class App : System.Windows.Application
         Controller = new AppController(new JsonAppStateStore(), logger);
         logger.Info("Startup", "Loading application state.");
         await Controller.StartAsync();
+        _singleInstance!.Start(Controller);
         logger.Info("Startup", "Initial note windows created.");
         if (Controller.State.Settings.CheckForUpdatesAutomatically)
             _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
                 new Action(() => _ = new UpdateService(logger).CheckAsync(false)));
     }
-    protected override async void OnExit(ExitEventArgs e) { if (Controller is not null) await Controller.SaveNowAsync(); base.OnExit(e); }
+    protected override async void OnExit(ExitEventArgs e) { if (Controller is not null) await Controller.SaveNowAsync(); _singleInstance?.Dispose(); base.OnExit(e); }
 }

@@ -95,6 +95,7 @@ public partial class NoteWindow : Window
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
+        IsVisibleChanged += (_, _) => _controller.RefreshTaskbarProxy();
         Editor.TextArea.SelectionBorder = null;
         Editor.TextArea.LostKeyboardFocus += Editor_LostKeyboardFocus;
         SourceInitialized += (_, _) => EnableNativeWindowAppearance();
@@ -758,6 +759,7 @@ public partial class NoteWindow : Window
             default: AddAttachment(new() { OriginalFilePath = path, DisplayName = GetAttachmentDisplayName(path), X = x, Y = y }); break;
         }
     }
+    public void OpenDroppedFile(string path) => AddFile(path, 24, 24);
     private void InsertEditorText(string text)
     {
         var offset = Editor.SelectionStart;

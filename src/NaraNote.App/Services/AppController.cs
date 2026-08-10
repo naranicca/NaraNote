@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Interop;
@@ -44,14 +45,27 @@ public sealed class AppController : IDisposable
         SetupReminderTimer();
         _ = Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { SetupTray(); SetupHotKeys(); }));
     }
-    public void NewNote(NoteData? source = null)
+    public NoteData NewNote(NoteData? source = null)
     {
         source ??= GetLastActiveNote();
         var desiredLeft = source is null ? 96 : source.Left + source.Width + 12;
         var desiredTop = source?.Top ?? 96;
         var note = AppStateFactory.CreateNote(State.Settings, desiredLeft, desiredTop);
         PlaceNewNoteBesideAnchor(note, source);
-        State.Notes.Add(note); Show(note); ScheduleSave();
+        State.Notes.Add(note); Show(note); ScheduleSave(); return note;
+    }
+    public void HandleSingleInstanceCommand(string command)
+    {
+        if (string.Equals(command, "NEW", StringComparison.Ordinal)) { NewNote(); return; }
+        if (!command.StartsWith("FILE:", StringComparison.Ordinal)) return;
+        try
+        {
+            var path = Encoding.UTF8.GetString(Convert.FromBase64String(command[5..]));
+            if (string.IsNullOrWhiteSpace(path)) return;
+            var note = NewNote();
+            if (_windows.TryGetValue(note.Id, out var window)) window.OpenDroppedFile(path);
+        }
+        catch (FormatException ex) { _logger.Error("SingleInstance", ex); }
     }
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
     public void Show(NoteData note, bool clearHiddenState = true)
@@ -67,10 +81,10 @@ public sealed class AppController : IDisposable
             _windows[note.Id] = window;
             _logger.Info("Startup", $"Constructed note window {note.Id}.");
         }
-        window.ShowInTaskbar = true;
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Show();
         window.Visibility = Visibility.Visible;
+        RefreshTaskbarProxy();
         window.Activate();
         window.FocusEditor();
         ScheduleSave();
@@ -79,7 +93,15 @@ public sealed class AppController : IDisposable
     {
         note.IsHidden = true;
         if (_windows.TryGetValue(note.Id, out var window)) window.Hide();
+        RefreshTaskbarProxy();
         ScheduleSave();
+    }
+    public void RefreshTaskbarProxy()
+    {
+        var proxy = _windows.Values.FirstOrDefault(window => window.IsVisible)
+                    ?? _windows.Values.FirstOrDefault();
+        foreach (var window in _windows.Values)
+            window.ShowInTaskbar = proxy is not null && ReferenceEquals(window, proxy);
     }
     private void SetupReminderTimer()
     {
@@ -137,7 +159,7 @@ public sealed class AppController : IDisposable
     }
     public void Closed(NoteData note)
     {
-        note.IsOpen = false; _windows.Remove(note.Id); _ = SaveNowAsync();
+        note.IsOpen = false; _windows.Remove(note.Id); RefreshTaskbarProxy(); _ = SaveNowAsync();
         if (_windows.Count == 0 && !State.Settings.UseSystemTray) Exit();
     }
     public void ScheduleSave()
@@ -157,6 +179,7 @@ public sealed class AppController : IDisposable
             note.IsHidden = !visible;
             if (visible) window.Show(); else window.Hide();
         }
+        RefreshTaskbarProxy();
         ScheduleSave();
     }
     public void ApplySettings()
