@@ -736,7 +736,23 @@ public partial class NoteWindow : Window
         switch (FileClassifier.Classify(path))
         {
             case DroppedFileKind.Text:
-                try { var info = new FileInfo(path); if (info.Length <= 5 * 1024 * 1024) { InsertEditorText(File.ReadAllText(path)); ScheduleSyntaxDetection(path); } else MessageBox.Show(UiText.Get("LargeTextError"), "NaraNote"); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show(UiText.Get("ReadFileError"), "NaraNote"); } break;
+                try
+                {
+                    var info = new FileInfo(path);
+                    if (info.Length > 5 * 1024 * 1024) { MessageBox.Show(UiText.Get("LargeTextError"), "NaraNote"); break; }
+                    var text = File.ReadAllText(path);
+                    InsertEditorText(text);
+                    _note.ExportFilePath = Path.GetFullPath(path);
+                    // A dropped text file establishes the current baseline; edits made afterwards
+                    // will mark the linked file as dirty through NoteViewModel.Touch().
+                    _note.IsExportDirty = false;
+                    RememberExportFileVersion();
+                    UpdateExportPathDisplay();
+                    _controller.ScheduleSave();
+                    ScheduleSyntaxDetection(path, preserveExportBaseline: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show(UiText.Get("ReadFileError"), "NaraNote"); }
+                break;
             case DroppedFileKind.Image:
                 try { var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.UriSource = new Uri(path); bitmap.EndInit(); bitmap.Freeze(); AddBitmap(bitmap, x, y); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { MessageBox.Show(UiText.Get("OpenImageError"), "NaraNote"); } break;
             default: AddAttachment(new() { OriginalFilePath = path, DisplayName = GetAttachmentDisplayName(path), X = x, Y = y }); break;
@@ -1097,7 +1113,7 @@ public partial class NoteWindow : Window
         };
         menu.Items.Add(syntax);
     }
-    private void ScheduleSyntaxDetection(string? fileName = null)
+    private void ScheduleSyntaxDetection(string? fileName = null, bool preserveExportBaseline = false)
     {
         if (_note.IsSyntaxLanguageExplicit || _note.SyntaxLanguage != "Auto") return;
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
@@ -1108,6 +1124,11 @@ public partial class NoteWindow : Window
             _note.SyntaxLanguage = detected.Language;
             ApplySyntaxHighlighting();
             _vm.Touch();
+            if (preserveExportBaseline)
+            {
+                _note.IsExportDirty = false;
+                UpdateExportPathDisplay();
+            }
         }));
     }
     private void ApplySyntaxHighlighting()
