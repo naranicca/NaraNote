@@ -13,6 +13,17 @@ public sealed class CoreTests
     [Fact] public void Empty_state_remains_without_notes() => Assert.Empty(AppStateFactory.EnsureUsable(new AppState()).Notes);
 
     [Fact]
+    public void Note_hidden_state_round_trips_through_json()
+    {
+        var note = new NoteData();
+        Assert.False(note.IsHidden);
+        note.IsHidden = true;
+        var json = System.Text.Json.JsonSerializer.Serialize(new AppState { Notes = [note] });
+        var restored = System.Text.Json.JsonSerializer.Deserialize<AppState>(json);
+        Assert.True(restored!.Notes.Single().IsHidden);
+    }
+
+    [Fact]
     public async Task Text_note_exports_as_utf8_text()
     {
         var root = Path.Combine(Path.GetTempPath(), $"NaraNote-tests-{Guid.NewGuid():N}"); Directory.CreateDirectory(root);

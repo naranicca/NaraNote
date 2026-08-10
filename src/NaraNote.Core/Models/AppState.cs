@@ -49,6 +49,7 @@ public sealed class NoteData
     public string? ExportFilePath { get; set; }
     public bool IsExportDirty { get; set; }
     public bool IsOpen { get; set; } = true;
+    public bool IsHidden { get; set; }
     public bool IsAlwaysOnTop { get; set; }
     public ReminderData Reminder { get; set; } = new();
     public DateTimeOffset LastModifiedUtc { get; set; } = DateTimeOffset.UtcNow;

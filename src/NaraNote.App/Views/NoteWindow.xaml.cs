@@ -1052,7 +1052,7 @@ public partial class NoteWindow : Window
         settings.Click += Settings_Click;
         menu.Items.Add(settings);
         menu.Closed += (_, _) => { menu.PlacementTarget = null; menu.Placement = PlacementMode.MousePoint; };
-        Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
+        TitleArea.ContextMenu = menu; Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
     }
     private void Reminder_Click(object sender, RoutedEventArgs e)
     {
@@ -1167,8 +1167,7 @@ public partial class NoteWindow : Window
     private void HideCurrentNote()
     {
         CommitImeComposition();
-        _controller.ScheduleSave();
-        Hide();
+        _controller.Hide(_note);
     }
     private async Task ExportCurrentNoteAsync(bool saveAs)
     {

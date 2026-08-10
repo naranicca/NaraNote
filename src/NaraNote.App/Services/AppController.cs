@@ -35,10 +35,11 @@ public sealed class AppController : IDisposable
         var open = State.Notes.Where(n => n.IsOpen).ToList();
         foreach (var note in open)
         {
+            var shouldRemainHidden = note.IsHidden || ShouldAutoHideUntilReminder(note);
             _logger.Info("Startup", $"Creating note window {note.Id}.");
-            Show(note);
+            Show(note, clearHiddenState: false);
             _logger.Info("Startup", $"Note window {note.Id} shown.");
-            if (ShouldAutoHideUntilReminder(note) && _windows.TryGetValue(note.Id, out var window)) window.Hide();
+            if (shouldRemainHidden && _windows.TryGetValue(note.Id, out var window)) window.Hide();
         }
         SetupReminderTimer();
         _ = Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { SetupTray(); SetupHotKeys(); }));
@@ -53,10 +54,11 @@ public sealed class AppController : IDisposable
         State.Notes.Add(note); Show(note); ScheduleSave();
     }
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
-    public void Show(NoteData note)
+    public void Show(NoteData note, bool clearHiddenState = true)
     {
         ClearMissingExportPath(note);
         note.IsOpen = true;
+        if (clearHiddenState) note.IsHidden = false;
         NormalizePlacement(note);
         if (!_windows.TryGetValue(note.Id, out var window))
         {
@@ -71,6 +73,12 @@ public sealed class AppController : IDisposable
         window.Visibility = Visibility.Visible;
         window.Activate();
         window.FocusEditor();
+        ScheduleSave();
+    }
+    public void Hide(NoteData note)
+    {
+        note.IsHidden = true;
+        if (_windows.TryGetValue(note.Id, out var window)) window.Hide();
         ScheduleSave();
     }
     private void SetupReminderTimer()
@@ -141,7 +149,16 @@ public sealed class AppController : IDisposable
     {
         await _saveGate.WaitAsync(token); try { await _store.SaveAsync(State, token); } catch (Exception ex) { _logger.Error("Persistence", ex); } finally { _saveGate.Release(); }
     }
-    public void ToggleAll(bool visible) { foreach (var w in _windows.Values) { if (visible) w.Show(); else w.Hide(); } }
+    public void ToggleAll(bool visible)
+    {
+        foreach (var (id, window) in _windows)
+        {
+            var note = State.Notes.First(note => note.Id == id);
+            note.IsHidden = !visible;
+            if (visible) window.Show(); else window.Hide();
+        }
+        ScheduleSave();
+    }
     public void ApplySettings()
     {
         UiText.SetLanguage(State.Settings.Language);
