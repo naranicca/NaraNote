@@ -637,11 +637,12 @@ public partial class NoteWindow : Window
     private void Editor_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         if (ctrl && e.Key == Key.N) { _controller.NewNote(_note); e.Handled = true; }
         else if (ctrl && (e.Key == Key.Add || (e.Key == Key.OemPlus))) { _vm.FontSize += 2; ApplyAppearance(); e.Handled = true; }
         else if (ctrl && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { _vm.FontSize -= 2; ApplyAppearance(); e.Handled = true; }
         else if (ctrl && e.Key == Key.D0) { _vm.FontSize = _controller.State.Settings.DefaultFontSize; ApplyAppearance(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.V) { if (TryPasteRich()) e.Handled = true; ScheduleSyntaxDetection(); }
+        else if ((ctrl && e.Key == Key.V) || (!ctrl && shift && e.Key == Key.Insert)) { if (TryPasteRich()) e.Handled = true; ScheduleSyntaxDetection(force: true); }
         else if (e.Key is Key.Enter or Key.Return) ScheduleSyntaxDetection();
         else if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; }
     }
@@ -1213,12 +1214,12 @@ public partial class NoteWindow : Window
         };
         menu.Items.Add(syntax);
     }
-    private void ScheduleSyntaxDetection(string? fileName = null, bool preserveExportBaseline = false)
+    private void ScheduleSyntaxDetection(string? fileName = null, bool preserveExportBaseline = false, bool force = false)
     {
-        if (_note.IsSyntaxLanguageExplicit || _note.SyntaxLanguage != "Auto") return;
+        if (!force && (_note.IsSyntaxLanguageExplicit || _note.SyntaxLanguage != "Auto")) return;
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
         {
-            if (_note.IsSyntaxLanguageExplicit || _note.SyntaxLanguage != "Auto") return;
+            if (!force && (_note.IsSyntaxLanguageExplicit || _note.SyntaxLanguage != "Auto")) return;
             var detected = SyntaxDetector.Detect(Editor.Text, fileName);
             if (detected is null || detected.Confidence < .75) return;
             _note.SyntaxLanguage = detected.Language;
