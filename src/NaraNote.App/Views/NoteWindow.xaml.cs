@@ -99,6 +99,9 @@ public partial class NoteWindow : Window
         IsVisibleChanged += (_, _) => _controller.RefreshTaskbarProxy();
         Editor.TextArea.SelectionBorder = null;
         Editor.TextArea.LostKeyboardFocus += Editor_LostKeyboardFocus;
+        // covers every text paste path (Ctrl+V, Shift+Insert, context menu); detection runs
+        // at background priority, i.e. after the pasted text has been inserted
+        System.Windows.DataObject.AddPastingHandler(Editor.TextArea, (_, _) => ScheduleSyntaxDetection(force: true));
         SourceInitialized += (_, _) => EnableNativeWindowAppearance();
         _vm.PropertyChanged += (_, e) =>
         {
@@ -642,7 +645,7 @@ public partial class NoteWindow : Window
         else if (ctrl && (e.Key == Key.Add || (e.Key == Key.OemPlus))) { _vm.FontSize += 2; ApplyAppearance(); e.Handled = true; }
         else if (ctrl && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { _vm.FontSize -= 2; ApplyAppearance(); e.Handled = true; }
         else if (ctrl && e.Key == Key.D0) { _vm.FontSize = _controller.State.Settings.DefaultFontSize; ApplyAppearance(); e.Handled = true; }
-        else if ((ctrl && e.Key == Key.V) || (!ctrl && shift && e.Key == Key.Insert)) { if (TryPasteRich()) e.Handled = true; ScheduleSyntaxDetection(force: true); }
+        else if ((ctrl && e.Key == Key.V) || (!ctrl && shift && e.Key == Key.Insert)) { if (TryPasteRich()) e.Handled = true; }
         else if (e.Key is Key.Enter or Key.Return) ScheduleSyntaxDetection();
         else if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; }
     }
@@ -1280,14 +1283,14 @@ public partial class NoteWindow : Window
         search.Click += (_, _) => OpenSearch();
         menu.Items.Add(search);
         menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Undo"), Command = ApplicationCommands.Undo, CommandTarget = Editor, InputGestureText = "Ctrl+Z" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Redo"), Command = ApplicationCommands.Redo, CommandTarget = Editor, InputGestureText = "Ctrl+Y" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Undo"), Command = ApplicationCommands.Undo, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+Z" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Redo"), Command = ApplicationCommands.Redo, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+Y" });
         menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Cut"), Command = ApplicationCommands.Cut, CommandTarget = Editor, InputGestureText = "Ctrl+X" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Copy"), Command = ApplicationCommands.Copy, CommandTarget = Editor, InputGestureText = "Ctrl+C" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Paste"), Command = ApplicationCommands.Paste, CommandTarget = Editor, InputGestureText = "Ctrl+V" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Delete"), Command = ApplicationCommands.Delete, CommandTarget = Editor, InputGestureText = "Delete" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("SelectAll"), Command = ApplicationCommands.SelectAll, CommandTarget = Editor, InputGestureText = "Ctrl+A" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Cut"), Command = ApplicationCommands.Cut, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+X" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Copy"), Command = ApplicationCommands.Copy, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+C" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Paste"), Command = ApplicationCommands.Paste, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+V" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Delete"), Command = ApplicationCommands.Delete, CommandTarget = Editor.TextArea, InputGestureText = "Delete" });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("SelectAll"), Command = ApplicationCommands.SelectAll, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+A" });
     }
     private void HideCurrentNote()
     {
