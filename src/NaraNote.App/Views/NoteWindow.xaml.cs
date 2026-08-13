@@ -66,6 +66,21 @@ public partial class NoteWindow : Window
     private FrameworkElement? _selectedVisual;
     private System.Windows.Point _dragOrigin;
     private (double X, double Y) _elementOrigin;
+    private bool _inkObjectDragActive;
+    private const double StylusTextScrollDragThreshold = 6d;
+    private const double TextScrollInertiaDecayPerSecond = 0.05d;
+    private const double TextScrollInertiaStopSpeed = 15d;
+    private bool _stylusTextDragActive;
+    private bool _stylusTextScrolling;
+    private System.Windows.Point _stylusTextDragStart;
+    private double _stylusTextScrollStartVerticalOffset;
+    private double _stylusTextScrollStartHorizontalOffset;
+    private System.Windows.Point _stylusScrollLastPoint;
+    private int _stylusScrollLastTimestamp;
+    private System.Windows.Vector _stylusScrollVelocity;
+    private bool _textScrollInertiaActive;
+    private System.Windows.Vector _textScrollInertiaVelocity;
+    private TimeSpan? _textScrollInertiaLastTick;
     private bool _stylusWindowDragActive;
     private System.Windows.Point _stylusWindowDragStartScreen;
     private System.Windows.Point _stylusWindowDragStartPosition;
@@ -96,9 +111,13 @@ public partial class NoteWindow : Window
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
+        Stylus.SetIsFlicksEnabled(this, false);
         IsVisibleChanged += (_, _) => _controller.RefreshTaskbarProxy();
         Editor.TextArea.SelectionBorder = null;
         Editor.TextArea.LostKeyboardFocus += Editor_LostKeyboardFocus;
+        Editor.PreviewStylusDown += Editor_PreviewStylusDown;
+        Editor.PreviewStylusMove += Editor_PreviewStylusMove;
+        Editor.PreviewStylusUp += Editor_PreviewStylusUp;
         // covers every text paste path (Ctrl+V, Shift+Insert, context menu); detection runs
         // at background priority, i.e. after the pasted text has been inserted
         System.Windows.DataObject.AddPastingHandler(Editor.TextArea, (_, _) => ScheduleSyntaxDetection(force: true));
@@ -129,7 +148,11 @@ public partial class NoteWindow : Window
         Ink.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
         Ink.StrokeErasing += Ink_StrokeErasing;
         Ink.AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Ink_PreviewStylusDownForObjectSelection), true);
+        Ink.AddHandler(Stylus.PreviewStylusMoveEvent, new StylusEventHandler(Ink_PreviewStylusMoveForObjectDrag), true);
+        Ink.AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Ink_PreviewStylusUpForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForObjectSelection), true);
+        Ink.AddHandler(Mouse.PreviewMouseMoveEvent, new MouseButtonEventHandler(Ink_PreviewMouseMoveForObjectDrag), true);
+        Ink.AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(Ink_PreviewMouseUpForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
         Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
         MouseLeave += (_, _) => { if (_resizeEdge == 0) Mouse.OverrideCursor = null; };
@@ -143,7 +166,7 @@ public partial class NoteWindow : Window
         PreviewKeyUp += Window_PreviewKeyUp;
         Deactivated += (_, _) =>
         {
-            ResetShiftLineMode(); FinishStylusWindowDrag();
+            ResetShiftLineMode(); FinishStylusWindowDrag(); CancelInkObjectDrag(); CancelStylusTextScroll();
         };
         RememberExportFileVersion();
         _loading = false;
@@ -296,6 +319,100 @@ public partial class NoteWindow : Window
         CommitImeComposition();
         Editor.TextArea.Caret.Hide();
     }
+    private static bool IsPenStylusDevice(StylusDevice? device) => device?.TabletDevice?.Type == TabletDeviceType.Stylus;
+    private void Editor_PreviewStylusDown(object sender, StylusDownEventArgs e)
+    {
+        if (!IsPenStylusDevice(e.StylusDevice)) return;
+        StopTextScrollInertia();
+        _stylusTextDragActive = true;
+        _stylusTextScrolling = false;
+        _stylusTextDragStart = e.GetPosition(Editor);
+        _stylusTextScrollStartVerticalOffset = Editor.VerticalOffset;
+        _stylusTextScrollStartHorizontalOffset = Editor.HorizontalOffset;
+        _stylusScrollLastPoint = _stylusTextDragStart;
+        _stylusScrollLastTimestamp = e.Timestamp;
+        _stylusScrollVelocity = default;
+    }
+    private void Editor_PreviewStylusMove(object sender, StylusEventArgs e)
+    {
+        if (!_stylusTextDragActive) return;
+        var point = e.GetPosition(Editor);
+        var delta = point - _stylusTextDragStart;
+        if (_stylusTextScrolling)
+        {
+            if (Math.Abs(delta.X) < StylusTextScrollDragThreshold && Math.Abs(delta.Y) < StylusTextScrollDragThreshold)
+            {
+                _stylusScrollLastPoint = point; _stylusScrollLastTimestamp = e.Timestamp;
+                return;
+            }
+            _stylusTextScrolling = true;
+            Editor.TextArea.ClearSelection();
+            Stylus.Capture(Editor, CaptureMode.SubTree);
+        }
+        Editor.ScrollToVerticalOffset(_stylusTextScrollStartVerticalOffset - delta.Y);
+        Editor.ScrollToHorizontalOffset(_stylusTextScrollStartHorizontalOffset - delta.X);
+        UpdateStylusScrollVelocity(point, e.Timestamp);
+        e.Handled = true;
+    }
+    private void UpdateStylusScrollVelocity(System.Windows.Point point, int timestamp)
+    {
+        var elapsedSeconds = (timestamp- _stylusScrollLastTimestamp) / 1000d;
+        if (elapsedSeconds > 0)
+        {
+            var instant = (point - _stylusScrollLastPoint) / elapsedSeconds;
+            _stylusScrollVelocity = _stylusScrollVelocity * 0.7 + instant * 0.3;
+        }
+        _stylusScrollLastPoint = point; _stylusScrollLastTimestamp = timestamp;
+    }
+    private void Editor_PreviewStylusUp(object sender, StylusEventArgs e)
+    {
+        if (!_stylusTextDragActive) return;
+        _stylusTextDragActive = false;
+        if (!_stylusTextScrolling) return;
+        _stylusTextScrolling = false;
+        if (ReferenceEquals(Stylus.Captured, Editor)) Stylus.Capture(null);
+        if (Mouse.Captured is not null) Mouse.Capture(null);
+        Editor.TextArea.ClearSelection();
+        BeginTextScrollInertia(_stylusScrollVelocity);
+        e.Handled = true;
+    }
+    private void CancelStylusTextScroll()
+    {
+        StopTextScrollInertia();
+        if (!_stylusTextDragActive) return;
+        _stylusTextDragActive = false;
+        if (!_stylusTextScrolling) return;
+        _stylusTextScrolling = false;
+        if (ReferenceEquals(Stylus.Captured, Editor)) Stylus.Capture(null);
+        if (Mouse.Captured is not null) Mouse.Capture(null);
+    }
+    private void BeginTextScrollInertia(System.Windows.Vector velocity)
+    {
+        if (velocity.Length < TextScrollInertiaStopSpeed) return;
+        _textScrollInertiaVelocity = velocity;
+        _textScrollInertiaLastTick = null;
+        if (_textScrollInertiaActive) return;
+        _textScrollInertiaActive = true;
+        CompositionTarget.Rendering += TextScrollInertia_Tick;
+    }
+    private void TextScrollInertia_Tick(object? sender, EventArgs e)
+    {
+        var now = ((RenderingEventArgs)e).RenderingTime;
+        if (_textScrollInertiaLastTick is not { } last) { _textScrollInertiaLastTick = now; return; }
+        var dt = (now - last).TotalSeconds;
+        _textScrollInertiaLastTick = now;
+        if (dt <= 0) return;
+        Editor.ScrollToVerticalOffset(Editor.VerticalOffset - _textScrollInertiaVelocity.Y * dt);
+        Editor.ScrollToHorizontalOffset(Editor.HorizontalOffset - _textScrollInertiaVelocity.X * dt);
+        _textScrollInertiaVelocity *= Math.Pow(TextScrollInertiaDecayPerSecond, dt);
+        if (_textScrollInertiaVelocity.Length < TextScrollInertiaStopSpeed) StopTextScrollInertia();
+    }
+    private void StopTextScrollInertia()
+    {
+        if (!_textScrollInertiaActive) return;
+        _textScrollInertiaActive = false;
+        CompositionTarget.Rendering -= TextScrollInertia_Tick;
+    }
 
     private void ApplyPenSettings()
     {
@@ -385,6 +502,7 @@ public partial class NoteWindow : Window
     }
     protected override void OnClosed(EventArgs e)
     {
+        StopTextScrollInertia();
         EndImeComposition();
         if (_imeHwndSource is not null) _imeHwndSource.RemoveHook(ImeWndProc);
         PersistInk(); _controller.Closed(_note); base.OnClosed(e);
@@ -681,6 +799,7 @@ public partial class NoteWindow : Window
     private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive;
     private void SwitchToPenMode()
     {
+        StopTextScrollInertia();
         ClearObjectSelection();
         Ink.IsHitTestVisible = true;
         Ink.EditingMode = InkCanvasEditingMode.Ink;
@@ -745,6 +864,8 @@ public partial class NoteWindow : Window
         if (Ink.EditingMode != InkCanvasEditingMode.Ink || !TrySelectObjectAt(e.GetPosition(Surface))) return;
         _inkInputActive = false;
         ResetShiftLineMode();
+        BeginInkObjectDrag(e.GetPosition(Surface));
+        Stylus.Capture(Ink, CaptureMode.SubTree);
         e.Handled = true;
     }
     private void Ink_PreviewMouseDownForObjectSelection(object sender, MouseButtonEventArgs e)
@@ -752,7 +873,57 @@ public partial class NoteWindow : Window
         if (e.Handled || e.ChangedButton != MouseButton.Left || Ink.EditingMode != InkCanvasEditingMode.Ink || !TrySelectObjectAt(e.GetPosition(Surface))) return;
         _inkInputActive = false;
         ResetShiftLineMode();
+        BeginInkObjectDrag(e.GetPosition(Surface));
+        Ink.CaptureMouse();
         e.Handled = true;
+    }
+    private void BeginInkObjectDrag(System.Windows.Point point)
+    {
+        if (_selectedElement is not { } element) return;
+        _inkObjectDragActive = true;
+        _dragOrigin = point;
+        _elementOrigin = GetElementPosition(element);
+    }
+    private void Ink_PreviewStylusMoveForObjectDrag(object sender, StylusEventArgs e)
+    {
+        if (!_inkObjectDragActive || !ReferenceEquals(Stylus.Captured, Ink)) return;
+        MoveSelectedElement(e.GetPosition(Surface));
+        e.Handled = true;
+    }
+    private void Ink_PreviewStylusUpForObjectDrag(object sender, StylusEventArgs e)
+    {
+        if (!_inkObjectDragActive || !ReferenceEquals(Stylus.Captured, Ink)) return;
+        MoveSelectedElement(e.GetPosition(Surface));
+        FinishInkObjectDrag();
+        Stylus.Capture(null);
+        e.Handled = true;
+    }
+    private void Ink_PreviewMouseMoveForObjectDrag(object sender, MouseEventArgs e)
+    {
+        if (!_inkObjectDragActive || !Ink.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed) return;
+        MoveSelectedElement(e.GetPosition(Surface));
+        e.Handled = true;
+    }
+    private void Ink_PreviewMouseUpForObjectDrag(object sender, MouseButtonEventArgs e)
+    {
+        if (!_inkObjectDragActive || !Ink.IsMouseCaptured || e.ChangedButton != MouseButton.Left) return;
+        MoveSelectedElement(e.GetPosition(Surface));
+        FinishInkObjectDrag();
+        Ink.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+    private void FinishInkObjectDrag()
+    {
+        if (!_inkObjectDragActive) return;
+        _inkObjectDragActive = false;
+        CommitElementDrag();
+    }
+    private void CancelInkObjectDrag()
+    {
+        if (!_inkObjectDragActive) return;
+        _inkObjectDragActive = false;
+        if (ReferenceEquals(Stylus.Captured, Ink)) Stylus.Capture(null);
+        if (Ink.IsMouseCaptured) Ink.ReleaseMouseCapture();
     }
     private bool TrySelectObjectAt(System.Windows.Point point)
     {
@@ -950,20 +1121,32 @@ public partial class NoteWindow : Window
         visual.AddHandler(Mouse.PreviewMouseMoveEvent, new System.Windows.Input.MouseEventHandler((_, e) =>
         {
             if (!visual.IsMouseCaptured || e.LeftButton != MouseButtonState.Pressed) return;
-            var point = e.GetPosition(ObjectCanvas); var x = Math.Clamp(_elementOrigin.X + point.X - _dragOrigin.X, 0, Math.Max(0, ObjectCanvas.ActualWidth - visual.ActualWidth)); var y = Math.Clamp(_elementOrigin.Y + point.Y - _dragOrigin.Y, 0, Math.Max(0, ObjectCanvas.ActualHeight - visual.ActualHeight));
-            SetElementPosition(element, x, y); Canvas.SetLeft(visual, x); Canvas.SetTop(visual, y); if (element is ImageElement image) { PositionHandles(image); foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(c => ReferenceEquals(c.Tag, image))) { Canvas.SetLeft(caption, x); Canvas.SetTop(caption, y + image.Height + 2); } } else if (element is FileAttachmentElement attachment) { PositionAttachmentHandles(attachment); PositionAttachmentCaption(attachment); }
+            MoveSelectedElement(e.GetPosition(ObjectCanvas));
         }), true);
         visual.AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler((_, e) =>
         {
             if (e.ChangedButton != MouseButton.Left) return;
-            if (!visual.IsMouseCaptured) return; visual.ReleaseMouseCapture(); var start = _elementOrigin; var end = GetElementPosition(element);
-            if (start != end)
-            {
-                _history.Execute(new DelegateCommand(() => SetElementPosition(element, end.X, end.Y), () => SetElementPosition(element, start.X, start.Y)));
-                _vm.Touch(); RestoreElements(); SelectObject(element);
-            }
+            if (!visual.IsMouseCaptured) return; visual.ReleaseMouseCapture();
+            CommitElementDrag();
             e.Handled = true;
         }), true);
+    }
+    private void MoveSelectedElement(System.Windows.Point point)
+    {
+        if (_selectedElement is not { } element || _selectedVisual is not { } visual) return;
+        var x = Math.Clamp(_elementOrigin.X + point.X - _dragOrigin.X, 0, Math.Max(0, ObjectCanvas.ActualWidth - visual.ActualWidth));
+        var y = Math.Clamp(_elementOrigin.Y + point.Y - _dragOrigin.Y, 0, Math.Max(0, ObjectCanvas.ActualHeight - visual.ActualHeight));
+        SetElementPosition(element, x, y); Canvas.SetLeft(visual, x); Canvas.SetTop(visual, y);
+        if (element is ImageElement image) { PositionHandles(image); foreach (var caption in ObjectCanvas.Children.OfType<TextBlock>().Where(c => ReferenceEquals(c.Tag, image))) { Canvas.SetLeft(caption, x); Canvas.SetTop(caption, y + image.Height + 2); } }
+        else if (element is FileAttachmentElement attachment) { PositionAttachmentHandles(attachment); PositionAttachmentCaption(attachment); }
+    }
+    private void CommitElementDrag()
+    {
+        if (_selectedElement is not { } element) return;
+        var start = _elementOrigin; var end = GetElementPosition(element);
+        if (start == end) return;
+        _history.Execute(new DelegateCommand(() => SetElementPosition(element, end.X, end.Y), () => SetElementPosition(element, start.X, start.Y)));
+        _vm.Touch(); RestoreElements(); SelectObject(element);
     }
     private void AddImageHandles(FrameworkElement image, ImageElement element)
     {
