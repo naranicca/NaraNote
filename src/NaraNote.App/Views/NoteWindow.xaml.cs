@@ -151,7 +151,7 @@ public partial class NoteWindow : Window
         Ink.AddHandler(Stylus.PreviewStylusMoveEvent, new StylusEventHandler(Ink_PreviewStylusMoveForObjectDrag), true);
         Ink.AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Ink_PreviewStylusUpForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForObjectSelection), true);
-        Ink.AddHandler(Mouse.PreviewMouseMoveEvent, new System.Windows.Input.MouseButtonEventHandler(Ink_PreviewMouseMoveForObjectDrag), true);
+        Ink.AddHandler(Mouse.PreviewMouseMoveEvent, new System.Windows.Input.MouseEventHandler(Ink_PreviewMouseMoveForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(Ink_PreviewMouseUpForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
         Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
