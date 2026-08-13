@@ -151,7 +151,7 @@ public partial class NoteWindow : Window
         Ink.AddHandler(Stylus.PreviewStylusMoveEvent, new StylusEventHandler(Ink_PreviewStylusMoveForObjectDrag), true);
         Ink.AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Ink_PreviewStylusUpForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForObjectSelection), true);
-        Ink.AddHandler(Mouse.PreviewMouseMoveEvent, new MouseButtonEventHandler(Ink_PreviewMouseMoveForObjectDrag), true);
+        Ink.AddHandler(Mouse.PreviewMouseMoveEvent, new System.Windows.Input.MouseButtonEventHandler(Ink_PreviewMouseMoveForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(Ink_PreviewMouseUpForObjectDrag), true);
         Ink.AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Ink_PreviewMouseDownForStraightLine), true);
         Ink.PreviewMouseMove += (_, _) => UpdateShiftLineCursor();
@@ -338,7 +338,7 @@ public partial class NoteWindow : Window
         if (!_stylusTextDragActive) return;
         var point = e.GetPosition(Editor);
         var delta = point - _stylusTextDragStart;
-        if (_stylusTextScrolling)
+        if (!_stylusTextScrolling)
         {
             if (Math.Abs(delta.X) < StylusTextScrollDragThreshold && Math.Abs(delta.Y) < StylusTextScrollDragThreshold)
             {
@@ -356,7 +356,7 @@ public partial class NoteWindow : Window
     }
     private void UpdateStylusScrollVelocity(System.Windows.Point point, int timestamp)
     {
-        var elapsedSeconds = (timestamp- _stylusScrollLastTimestamp) / 1000d;
+        var elapsedSeconds = (timestamp - _stylusScrollLastTimestamp) / 1000d;
         if (elapsedSeconds > 0)
         {
             var instant = (point - _stylusScrollLastPoint) / elapsedSeconds;
