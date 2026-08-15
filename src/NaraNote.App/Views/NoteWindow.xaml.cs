@@ -443,8 +443,8 @@ public partial class NoteWindow : Window
         PinHeadPath.Fill = _note.IsAlwaysOnTop ? headerForeground : Brushes.Transparent;
         PinIconViewbox.RenderTransform = new RotateTransform(_note.IsAlwaysOnTop ? 0 : 90);
         PinButton.ToolTip = UiText.Get(_note.IsAlwaysOnTop ? "DisableAlwaysOnTop" : "AlwaysOnTop");
-        ExportPathTextBlock.Foreground = headerForeground;
-        ExportDirtyIndicator.Foreground = headerForeground;
+        ExportPathTextBlock.Foreground = foreground; //headerForeground;
+        ExportDirtyIndicator.Foreground = foreground; //headerForeground;
         UpdateExportPathDisplay();
         Foreground = foreground; Editor.Foreground = foreground; Editor.FontSize = _note.FontSize; Editor.FontFamily = new FontFamily(_note.FontFamily);
         Editor.TextArea.SelectionCornerRadius = Math.Clamp(Editor.FontSize * 0.18, 1.5, 6.0);
