@@ -650,7 +650,7 @@ public partial class NoteWindow : Window
     private int GetInteractiveResizeEdge(System.Windows.Point point)
     {
         var edge = GetResizeEdge(point);
-        var overTitleDragArea = point.Y <= TitleArea.ActualHeight && point.X > Grip && point.X < ActualWidth - Grip;
+        var overTitleDragArea = point.Y > Grip && point.Y <= TitleArea.ActualHeight && point.X > Grip && point.X < ActualWidth - Grip;
         return overTitleDragArea ? edge & ~4 : edge;
     }
     private static System.Windows.Input.Cursor? CursorForEdge(int edge) => edge switch
