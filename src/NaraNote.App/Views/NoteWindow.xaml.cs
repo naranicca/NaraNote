@@ -788,12 +788,7 @@ public partial class NoteWindow : Window
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetPenThickness(DefaultPenThickness); e.Handled = true; }
         else if (ctrl && e.Key == Key.Z && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None)) { _history.Undo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
         else if (ctrl && (e.Key == Key.Y || (e.Key == Key.Z && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))) && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None)) { _history.Redo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
-        else if (e.Key == Key.Delete && _selectedElement is not null)
-        {
-            var element = _selectedElement;
-            _history.Execute(new DelegateCommand(() => _note.Elements.Remove(element), () => _note.Elements.Add(element)));
-            ClearObjectSelection(); RestoreElements(); _vm.Touch(); e.Handled = true;
-        }
+        else if (e.Key == Key.Delete && _selectedElement is not null) { DeleteElement(_selectedElement); e.Handled = true; }
         else if (e.Key == Key.Escape) ClearObjectSelection();
     }
     private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive;
@@ -1061,6 +1056,7 @@ public partial class NoteWindow : Window
             var caption = new TextBlock { Text = element.Caption, Width = element.Width, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Tag = element, Cursor = Cursors.IBeam, FontFamily = Editor.FontFamily, FontSize = Editor.FontSize, Foreground = Editor.Foreground };
             Canvas.SetLeft(caption, element.X); Canvas.SetTop(caption, element.Y + element.Height + 2); Panel.SetZIndex(caption, element.ZIndex); ObjectCanvas.Children.Add(caption);
             caption.MouseLeftButtonDown += (_, e) => { SelectObject(element); BeginCaptionEdit(element); e.Handled = true; };
+            AttachObjectContextMenu(caption, element);
         }
     }
     private void AddAttachment(FileAttachmentElement element) { _history.Execute(new DelegateCommand(() => _note.Elements.Add(element), () => _note.Elements.Remove(element))); RestoreElements(); SelectObject(element); _vm.Touch(); }
@@ -1077,6 +1073,7 @@ public partial class NoteWindow : Window
         var caption = new TextBlock { Text = element.DisplayName, Width = element.Width, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Tag = element, Cursor = Cursors.Hand, FontFamily = Editor.FontFamily, FontSize = Editor.FontSize, Foreground = Editor.Foreground, ToolTip = element.OriginalFilePath, Opacity = exists ? 1 : .58 };
         Canvas.SetLeft(caption, element.X); Canvas.SetTop(caption, element.Y + element.Height + 2); Panel.SetZIndex(caption, element.ZIndex); ObjectCanvas.Children.Add(caption);
         caption.MouseLeftButtonDown += (_, e) => { SelectObject(element); if (e.ClickCount >= 2) OpenAttachment(element); e.Handled = true; };
+        AttachObjectContextMenu(caption, element);
         AddAttachmentHandles(visual, element);
     }
     private static void OpenAttachment(FileAttachmentElement element)
@@ -1130,7 +1127,65 @@ public partial class NoteWindow : Window
             CommitElementDrag();
             e.Handled = true;
         }), true);
+        AttachObjectContextMenu(visual, element);
     }
+    private void AttachObjectContextMenu(FrameworkElement visual, NoteElement element)
+    {
+        visual.ContextMenu = BuildObjectContextMenu(element);
+        visual.ContextMenuOpening += (_, _) => { SelectObject(element); visual.ContextMenu = BuildObjectContextMenu(element); };
+    }
+    private ContextMenu BuildObjectContextMenu(NoteElement element)
+    {
+        var menu = new ContextMenu();
+        var source = GetElementSourcePath(element);
+        var saveAs = new MenuItem { Header = $"{UiText.Get("SaveAs")}...", IsEnabled = source is not null && File.Exists(source) };
+        saveAs.Click += (_, _) => SaveElementAs(element);
+        menu.Items.Add(saveAs);
+        menu.Items.Add(new Separator());
+        var delete = new MenuItem { Header = UiText.Get("Delete"), InputGestureText = "Delete" };
+        delete.Click += (_, _) => DeleteElement(element);
+        menu.Items.Add(delete);
+        return menu;
+    }
+    private void DeleteElement(NoteElement element)
+    {
+        _history.Execute(new DelegateCommand(() => _note.Elements.Remove(element), () => _note.Elements.Add(element)));
+        ClearObjectSelection(); RestoreElements(); _vm.Touch();
+    }
+    private static string? GetElementSourcePath(NoteElement element) => element switch
+    {
+        ImageElement image => image.StoredFilePath,
+        FileAttachmentElement file => file.OriginalFilePath,
+        _ => null
+    };
+    private void SaveElementAs(NoteElement element)
+    {
+        var source = GetElementSourcePath(element);
+        if (string.IsNullOrWhiteSpace(source) || !File.Exists(source)) { MessageBox.Show(UiText.Get("ObjectSourceMissing"), "NaraNote"); return; }
+        var extension = Path.GetExtension(source);
+        var dialog = new SaveFileDialog
+        {
+            Title = UiText.Get("SaveAs"),
+            AddExtension = true,
+            OverwritePrompt = true,
+            DefaultExt = extension,
+            Filter = string.IsNullOrWhiteSpace(extension) ? UiText.Get("AllFilesFilter") : $"*{extension}|*{extension}|{UiText.Get("AllFilesFilter")}",
+            FilterIndex = 1,
+            FileName = CreateSuggestedObjectName(element, source) + extension
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try { File.Copy(source, dialog.FileName, true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        {
+            MessageBox.Show(UiText.Get("ObjectSaveError"), "NaraNote");
+        }
+    }
+    private static string CreateSuggestedObjectName(NoteElement element, string source) => CreateSuggestedExportName(element switch
+    {
+        ImageElement image when !string.IsNullOrWhiteSpace(image.Caption) => image.Caption,
+        FileAttachmentElement file when !string.IsNullOrWhiteSpace(file.DisplayName) => Path.GetFileNameWithoutExtension(file.DisplayName),
+        _ => Path.GetFileNameWithoutExtension(source)
+    });
     private void MoveSelectedElement(System.Windows.Point point)
     {
         if (_selectedElement is not { } element || _selectedVisual is not { } visual) return;
@@ -1165,6 +1220,7 @@ public partial class NoteWindow : Window
             {
                 var end = (element.X, element.Y, element.Width, element.Height); _history.Execute(new DelegateCommand(() => ApplyBounds(element, end), () => ApplyBounds(element, start))); _vm.Touch(); RestoreElements(); SelectObject(element);
             };
+            AttachObjectContextMenu(thumb, element);
             ObjectCanvas.Children.Add(thumb);
         }
         PositionHandles(element);
@@ -1202,6 +1258,7 @@ public partial class NoteWindow : Window
                 var end = (element.X, element.Y, element.Width, element.Height);
                 _history.Execute(new DelegateCommand(() => ApplyAttachmentBounds(element, end), () => ApplyAttachmentBounds(element, start))); _vm.Touch(); RestoreElements(); SelectObject(element);
             };
+            AttachObjectContextMenu(thumb, element);
             ObjectCanvas.Children.Add(thumb);
         }
         PositionAttachmentHandles(element);
