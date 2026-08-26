@@ -226,13 +226,12 @@ public partial class NoteWindow : Window
     }
     public void ActivateForReminder()
     {
-        if (_reminderAnimationActive) { ForceReminderFocus(); return; }
+        if (_reminderAnimationActive) { StartReminderSound(); return; }
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Show();
         Topmost = true;
         _reminderOriginalLeft = Left;
         _reminderAnimationActive = true;
-        ForceReminderFocus();
         StartReminderSound();
         var rotation = new RotateTransform();
         Frame.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
@@ -259,7 +258,7 @@ public partial class NoteWindow : Window
         try
         {
             _reminderSoundPlayer = new SoundPlayer(path);
-            _reminderSoundPlayer.PlayLooping();
+            _reminderSoundPlayer.Play();
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
