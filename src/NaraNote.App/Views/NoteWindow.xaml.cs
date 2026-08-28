@@ -1494,12 +1494,14 @@ public partial class NoteWindow : Window
             "PowerShell" => "PowerShell",
             _ => null
         };
-        Editor.SyntaxHighlighting = definitionName switch
+        var highlighting = definitionName switch
         {
             null => null,
             "Lua" => LoadLuaHighlighting(),
             _ => HighlightingManager.Instance.GetDefinition(definitionName)
         };
+        Editor.SyntaxHighlighting = highlighting;
+        Editor.ShowLineNumbers = highlighting is not null;
     }
     private static IHighlightingDefinition? LoadLuaHighlighting()
     {
