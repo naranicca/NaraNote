@@ -133,6 +133,8 @@ public partial class NoteWindow : Window
         Left = note.Left; Top = note.Top; Width = note.Width; Height = note.Height; Topmost = note.IsAlwaysOnTop;
         ApplyPenSettings();
         Editor.Text = note.Text; ApplyAppearance(); RestoreElements(); BuildContextMenu(); RefreshReminderMenu();
+        AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Reminder_PreviewMouseDown), true);
+        AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Reminder_PreviewStylusDown), true);
         PreviewMouseLeftButtonDown += Resize_MouseLeftButtonDown;
         PreviewMouseMove += Resize_MouseMove;
         PreviewMouseLeftButtonUp += Resize_MouseLeftButtonUp;
@@ -241,12 +243,14 @@ public partial class NoteWindow : Window
             AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever
         };
+        Timeline.SetDesiredFrameRate(shake, 30);
         rotation.BeginAnimation(RotateTransform.AngleProperty, shake);
         var windowShake = new DoubleAnimation(_reminderOriginalLeft - 6, _reminderOriginalLeft + 6, TimeSpan.FromMilliseconds(70))
         {
             AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever
         };
+        Timeline.SetDesiredFrameRate(windowShake, 30);
         BeginAnimation(LeftProperty, windowShake, HandoffBehavior.SnapshotAndReplace);
     }
     private void ReminderFocusTimer_Tick(object? sender, EventArgs e) => ForceReminderFocus();
@@ -314,6 +318,14 @@ public partial class NoteWindow : Window
         Topmost = _note.IsAlwaysOnTop;
         if (applyAutoHide && _note.Reminder.IsEnabled && _note.Reminder.AutoHide)
             Hide();
+    }
+    private void Reminder_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_reminderAnimationActive) StopReminderAnimation();
+    }
+    private void Reminder_PreviewStylusDown(object sender, StylusDownEventArgs e)
+    {
+        if (_reminderAnimationActive) StopReminderAnimation();
     }
 
     private void Editor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
