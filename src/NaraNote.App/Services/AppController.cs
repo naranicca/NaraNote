@@ -103,10 +103,14 @@ public sealed class AppController : IDisposable
     }
     public void RefreshTaskbarProxy()
     {
+        /* use this code when you want only one note appears in taskbar
         var proxy = _windows.Values.FirstOrDefault(window => window.IsVisible)
                     ?? _windows.Values.FirstOrDefault();
         foreach (var window in _windows.Values)
             window.ShowInTaskbar = proxy is not null && ReferenceEquals(window, proxy);
+        */
+        foreach (var window in _windows.Values)
+            window.ShowInTaskbar = true;
     }
     private void SetupReminderTimer()
     {
