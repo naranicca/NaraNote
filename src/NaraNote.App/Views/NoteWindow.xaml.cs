@@ -238,7 +238,7 @@ public partial class NoteWindow : Window
         var rotation = new RotateTransform();
         Frame.RenderTransformOrigin = new System.Windows.Point(0.5, 0.5);
         Frame.RenderTransform = rotation;
-        var shake = new DoubleAnimation(-1.15, 1.15, TimeSpan.FromMilliseconds(75))
+        var shake = new DoubleAnimation(-1.5, 1.5, TimeSpan.FromMilliseconds(100))
         {
             AutoReverse = true,
             RepeatBehavior = RepeatBehavior.Forever
@@ -783,6 +783,22 @@ public partial class NoteWindow : Window
     }
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        var modifiers = Keyboard.Modifiers;
+        var ctrl = modifiers.HasFlag(ModifierKeys.Control);
+        if (modifiers == ModifierKeys.Control && e.Key == Key.R)
+        {
+            if (_reminderAnimationActive) StopReminderAnimation(false);
+            Reminder_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+        if (modifiers == ModifierKeys.Control && e.Key == Key.H)
+        {
+            if (_reminderAnimationActive) StopReminderAnimation(false);
+            HideCurrentNote();
+            e.Handled = true;
+            return;
+        }
         if (_reminderAnimationActive)
         {
             if (e.Key == Key.Escape) StopReminderAnimation();
@@ -790,7 +806,6 @@ public partial class NoteWindow : Window
             return;
         }
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
-        var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         if (ctrl && e.Key == Key.F) { OpenSearch(); e.Handled = true; return; }
         if (e.Key == Key.Escape && SearchBar.Visibility == Visibility.Visible) { CloseSearch(); e.Handled = true; return; }
         if (e.Key == Key.F8 || e.SystemKey == Key.F8) { SwitchToPenMode(); e.Handled = true; return; }
@@ -1417,7 +1432,7 @@ public partial class NoteWindow : Window
         menu.Items.Add(new Separator());
         AddSyntaxLanguageMenu(menu); AddNoteColorMenu(menu);
         menu.Items.Add(new Separator());
-        var reminder = new MenuItem { Header = UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu") };
+        var reminder = new MenuItem { Header = UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu"), InputGestureText = "Ctrl+R" };
         _reminderMenuItem = reminder;
         reminder.Click += Reminder_Click;
         menu.Items.Add(reminder);
@@ -1532,7 +1547,7 @@ public partial class NoteWindow : Window
         var saveAs = new MenuItem { Header = $"{UiText.Get("SaveAs")}...", InputGestureText = "Ctrl+Shift+S" };
         saveAs.Click += (_, _) => _ = ExportCurrentNoteAsync(true);
         menu.Items.Add(saveAs);
-        var hideNote = new MenuItem { Header = UiText.Get("HideNote") };
+        var hideNote = new MenuItem { Header = UiText.Get("HideNote"), InputGestureText = "Ctrl+H" };
         hideNote.Click += (_, _) => HideCurrentNote();
         menu.Items.Add(hideNote);
         var search = new MenuItem { Header = UiText.Get("Search"), InputGestureText = "Ctrl+F" };
