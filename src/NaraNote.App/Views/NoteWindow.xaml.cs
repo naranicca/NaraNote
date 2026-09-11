@@ -1528,7 +1528,7 @@ public partial class NoteWindow : Window
             _ => HighlightingManager.Instance.GetDefinition(definitionName)
         };
         Editor.SyntaxHighlighting = highlighting;
-        Editor.ShowLineNumbers = highlighting is not null;
+        Editor.ShowLineNumbers = highlighting is not null && _note.SyntaxLanguage != "Markdown";
     }
     private static IHighlightingDefinition? LoadLuaHighlighting()
     {
