@@ -106,7 +106,8 @@ public partial class ReminderWindow : Window
         if (recurrence == ReminderRecurrence.Weekly) days = [due.DayOfWeek];
         if (recurrence == ReminderRecurrence.SelectedWeekdays && days.Count == 0)
         { MessageBox.Show(this, UiText.Get("WeekdayError"), "NaraNote"); return; }
-        Result = new ReminderData { IsEnabled = true, AutoHide = AutoHideCheck.IsChecked == true, NextDueUtc = due.ToUniversalTime(), Recurrence = recurrence, TimeOfDay = time, Use24HourFormat = use24Hour, DaysOfWeek = days };
+        var dayOfMonth = recurrence == ReminderRecurrence.Monthly ? due.Day : 0;
+        Result = new ReminderData { IsEnabled = true, AutoHide = AutoHideCheck.IsChecked == true, NextDueUtc = due.ToUniversalTime(), Recurrence = recurrence, TimeOfDay = time, Use24HourFormat = use24Hour, DaysOfWeek = days, DayOfMonth = dayOfMonth };
         DialogResult = true;
     }
 
@@ -115,5 +116,5 @@ public partial class ReminderWindow : Window
     private bool IsDayChecked(DayOfWeek day) => GetDay(day).IsChecked == true;
     private void SetDay(DayOfWeek day, bool value) => GetDay(day).IsChecked = value;
     private System.Windows.Controls.CheckBox GetDay(DayOfWeek day) => day switch { DayOfWeek.Sunday => Sunday, DayOfWeek.Monday => Monday, DayOfWeek.Tuesday => Tuesday, DayOfWeek.Wednesday => Wednesday, DayOfWeek.Thursday => Thursday, DayOfWeek.Friday => Friday, _ => Saturday };
-    private static ReminderData Clone(ReminderData source) => new() { IsEnabled = source.IsEnabled, AutoHide = source.AutoHide, NextDueUtc = source.NextDueUtc, Recurrence = source.Recurrence, TimeOfDay = source.TimeOfDay, Use24HourFormat = source.Use24HourFormat, DaysOfWeek = [.. source.DaysOfWeek] };
+    private static ReminderData Clone(ReminderData source) => new() { IsEnabled = source.IsEnabled, AutoHide = source.AutoHide, NextDueUtc = source.NextDueUtc, Recurrence = source.Recurrence, TimeOfDay = source.TimeOfDay, Use24HourFormat = source.Use24HourFormat, DaysOfWeek = [.. source.DaysOfWeek], DayOfMonth = source.DayOfMonth };
 }

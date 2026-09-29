@@ -56,7 +56,7 @@ public sealed class NoteData
     public List<NoteElement> Elements { get; set; } = [];
 }
 
-public enum ReminderRecurrence { Once, Daily, Weekly, SelectedWeekdays }
+public enum ReminderRecurrence { Once, Daily, Weekly, SelectedWeekdays, Monthly }
 
 public sealed class ReminderData
 {
@@ -67,6 +67,7 @@ public sealed class ReminderData
     public TimeSpan TimeOfDay { get; set; }
     public bool Use24HourFormat { get; set; }
     public List<DayOfWeek> DaysOfWeek { get; set; } = [];
+    public int DayOfMonth { get; set; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]

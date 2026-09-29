@@ -97,6 +97,11 @@ public static class UiText
         Add("fr", ("AllFilesFilter", "Tout les fichiers (*.*)|*.*"),("ObjectSourceMissing","Le fichier d’origine de cet objet est introuvable"),("ObjectSaveError","Impossible d’enregistrer l’objet. Vérifiez l’emplacement et les autorisations."));
         Add("es", ("AllFilesFilter", "Todos los archivos (*.*)|*.*"),("ObjectSourceMissing","No se encontró elarchivo original de este objeto."),("ObjectSaveError","No se pudo guardar el objeto. Comprueba la ubicación y los permisos."));
         Add("vi", ("AllFilesFilter", "tất cả tệp (*.*)|*.*"),("ObjectSourceMissing","Không tìm thấy tệp gốc của đối tượng này."),("ObjectSaveError","Không thể lưu đối tượng. Vui lòng kiểm tra vị trí lưu trữ và quyền truy cập tệp."));
+        Add("en", ("RepeatMonthly", "Monthly on the same day"));
+        Add("ko", ("RepeatMonthly", "매달 같은 날 같은 시간"));
+        Add("fr", ("RepeatMonthly", "Chaque mois le même jour"));
+        Add("es", ("RepeatMonthly", "Cada mes el mismo día"));
+        Add("vi", ("RepeatMonthly", "Hàng tháng vào cùng ngày"));
     }
 
     private static void Add(string language, params (string Key, string Value)[] values)

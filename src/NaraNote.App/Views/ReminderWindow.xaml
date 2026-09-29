@@ -107,7 +107,7 @@
      <Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
      <TextBlock Text="{loc:Loc Repeat}" FontWeight="SemiBold" VerticalAlignment="Center"/>
      <ComboBox x:Name="RecurrenceBox" Grid.Column="1" SelectionChanged="RecurrenceBox_SelectionChanged" PreviewMouseLeftButtonDown="DropDownComboBox_PreviewMouseLeftButtonDown">
-      <ComboBoxItem Content="{loc:Loc RepeatOnce}"/><ComboBoxItem Content="{loc:Loc RepeatDaily}"/><ComboBoxItem Content="{loc:Loc RepeatWeekly}"/><ComboBoxItem Content="{loc:Loc RepeatWeekdays}"/>
+      <ComboBoxItem Content="{loc:Loc RepeatOnce}"/><ComboBoxItem Content="{loc:Loc RepeatDaily}"/><ComboBoxItem Content="{loc:Loc RepeatWeekly}"/><ComboBoxItem Content="{loc:Loc RepeatWeekdays}"/><ComboBoxItem Content="{loc:Loc RepeatMonthly}"/>
      </ComboBox>
     </Grid>
     <StackPanel x:Name="WeekdayPanel" Visibility="Collapsed">
