@@ -785,11 +785,26 @@ public partial class NoteWindow : Window
     {
         var modifiers = Keyboard.Modifiers;
         var ctrl = modifiers.HasFlag(ModifierKeys.Control);
-        if (modifiers == (ModifierKeys.Shift | ModifierKeys.Alt) && e.Key is Key.Left or Key.Right)
+        if (modifiers == (ModifierKeys.Control | ModifierKeys.Alt) && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
             const double step = 5;
-            if (e.Key == Key.Left) Left -= step;
-            Width += step;
+            switch (e.Key)
+            {
+                case Key.Left:
+                    Left -= step;
+                    Width += step;
+                    break;
+                case Key.Right:
+                    Width += step;
+                    break;
+                case Key.Up:
+                    Top -= step;
+                    Height += step;
+                    break;
+                case Key.Down:
+                    Height += step;
+                    break;
+            }
             e.Handled = true;
             return;
         }
