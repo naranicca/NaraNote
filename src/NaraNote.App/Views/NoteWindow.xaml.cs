@@ -785,6 +785,14 @@ public partial class NoteWindow : Window
     {
         var modifiers = Keyboard.Modifiers;
         var ctrl = modifiers.HasFlag(ModifierKeys.Control);
+        if (modifiers == (ModifierKeys.Shift | ModifierKeys.Alt) && e.Key is Key.Left or Key.Right)
+        {
+            const double step = 5;
+            if (e.Key == Key.Left) Left -= step;
+            Width += step;
+            e.Handled = true;
+            return;
+        }
         if (modifiers == ModifierKeys.Control && e.Key == Key.R)
         {
             if (_reminderAnimationActive) StopReminderAnimation(false);
