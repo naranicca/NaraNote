@@ -785,11 +785,57 @@ public partial class NoteWindow : Window
     {
         var modifiers = Keyboard.Modifiers;
         var ctrl = modifiers.HasFlag(ModifierKeys.Control);
-        if (modifiers == (ModifierKeys.Shift | ModifierKeys.Alt) && e.Key is Key.Left or Key.Right)
+        var shift = modifiers.HasFlag(ModifierKeys.Shift);
+        if ((modifiers == (ModifierKeys.Control | ModifierKeys.Alt) || modifiers == (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
             const double step = 5;
-            if (e.Key == Key.Left) Left -= step;
-            Width += step;
+            switch (e.Key)
+            {
+                case Key.Left:
+                    if (!shift)
+                    {
+                        Left -= step;
+                        Width += step;
+                    }
+                    else
+                    {
+                        Width -= step;
+                    }
+                    break;
+                case Key.Right:
+                    if (!shift)
+                    {
+                        Width += step;
+                    }
+                    else
+                    {
+                        Left += step;
+                        Width -= step;
+                    }
+                    break;
+                case Key.Up:
+                    if (!shift)
+                    {
+                        Top -= step;
+                        Height += step;
+                    }
+                    else
+                    {
+                        Height -= step;
+                    }
+                    break;
+                case Key.Down:
+                    if(!shift)
+                    {
+                        Height += step;
+                    }
+                    else
+                    {
+                        Top += step;
+                        Height -= step;
+                    }
+                    break;
+            }
             e.Handled = true;
             return;
         }
