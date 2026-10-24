@@ -1624,9 +1624,10 @@ public partial class NoteWindow : Window
     }
     private async Task ExportCurrentNoteAsync(bool saveAs)
     {
+        var restoreEditorFocus = Editor.IsKeyboardFocusWithin;
         try
         {
-            Keyboard.ClearFocus();
+            CommitImeComposition();
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Input);
             var snapshot = CreateExportSnapshot();
             var rich = snapshot.Elements.Count > 0;
@@ -1668,6 +1669,20 @@ public partial class NoteWindow : Window
         {
             MessageBox.Show(UiText.Get("SaveError"), "NaraNote");
         }
+        finally
+        {
+            if (restoreEditorFocus && IsActive) RestoreEditorFocusAfterSave();
+        }
+    }
+    private void RestoreEditorFocusAfterSave()
+    {
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+        {
+            if (!IsActive) return;
+            Editor.Focus();
+            Keyboard.Focus(Editor);
+            if (Editor.TextArea.IsKeyboardFocused) Editor.TextArea.Caret.Show();
+        }));
     }
     private NoteData CreateExportSnapshot()
     {
