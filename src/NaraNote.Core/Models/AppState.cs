@@ -19,6 +19,8 @@ public sealed class AppSettings
     public string DefaultColor { get; set; } = DefaultNoteColor;
     public string DefaultPenColor { get; set; } = "#FF222222";
     public double DefaultPenThickness { get; set; } = 3.5;
+    public double FileParameterNoteWidth { get; set; } = 360;
+    public double FileParameterNoteHeight { get; set; } = 320;
     public string ReminderSoundPath { get; set; } = DefaultReminderSoundPath;
     public string Language { get; set; } = "system";
     public bool UseGlobalHotKeys { get; set; } = true;
@@ -51,6 +53,7 @@ public sealed class NoteData
     public bool IsOpen { get; set; } = true;
     public bool IsHidden { get; set; }
     public bool IsAlwaysOnTop { get; set; }
+    public bool IsFileParameterNote { get; set; }
     public ReminderData Reminder { get; set; } = new();
     public DateTimeOffset LastModifiedUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<NoteElement> Elements { get; set; } = [];

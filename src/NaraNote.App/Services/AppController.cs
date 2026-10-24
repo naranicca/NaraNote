@@ -69,8 +69,23 @@ public sealed class AppController : IDisposable
     public void OpenFileInNewNote(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        var note = NewNote();
+        var width = Math.Max(220, State.Settings.FileParameterNoteWidth);
+        var height = Math.Max(160, State.Settings.FileParameterNoteHeight);
+        var note = AppStateFactory.CreateNote(State.Settings, 0, 0);
+        note.Width = width;
+        note.Height = height;
+        note.IsFileParameterNote = true;
+        PlaceFileParameterNoteCentered(note);
+        State.Notes.Add(note);
+        Show(note);
+        ScheduleSave();
         if (_windows.TryGetValue(note.Id, out var window)) window.OpenDroppedFile(path);
+    }
+    public void RememberFileParameterNoteSize(NoteData note)
+    {
+        if (!note.IsFileParameterNote) return;
+        State.Settings.FileParameterNoteWidth = Math.Max(220, note.Width);
+        State.Settings.FileParameterNoteHeight = Math.Max(160, note.Height);
     }
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
     public void Show(NoteData note, bool clearHiddenState = true)
@@ -257,6 +272,14 @@ public sealed class AppController : IDisposable
         if (screen is null) return; var area = screen.WorkingArea;
         var clamped = NaraNote.Core.Utilities.WindowPlacement.Clamp(new(note.Left, note.Top, note.Width, note.Height), new(area.X, area.Y, area.Width, area.Height));
         note.Left = clamped.X; note.Top = clamped.Y; note.Width = clamped.Width; note.Height = clamped.Height;
+    }
+    private static void PlaceFileParameterNoteCentered(NoteData note)
+    {
+        var screen = Screen.FromPoint(System.Windows.Forms.Cursor.Position) ?? Screen.PrimaryScreen;
+        if (screen is null) return;
+        var area = screen.WorkingArea;
+        note.Left = area.Left + (area.Width - note.Width) / 2;
+        note.Top = area.Top + (area.Height - note.Height) / 2;
     }
     private NoteData? GetLastActiveNote()
     {

@@ -165,7 +165,7 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
         LocationChanged += (_, _) => { if (_reminderAnimationActive) return; _note.Left = Left; _note.Top = Top; TouchLayout(); };
-        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; UpdateSearchBarLayout(); UpdateExportPathDisplay(); TouchLayout(); };
+        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; _controller.RememberFileParameterNoteSize(_note); UpdateSearchBarLayout(); UpdateExportPathDisplay(); TouchLayout(); };
         Activated += NoteWindow_Activated;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
