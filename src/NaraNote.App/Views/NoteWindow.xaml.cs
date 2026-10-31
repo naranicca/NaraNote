@@ -799,7 +799,7 @@ public partial class NoteWindow : Window
                     }
                     else
                     {
-                        Width -= step;
+                        Width = Math.Max(MinWidth, Width - step);
                     }
                     break;
                 case Key.Right:
@@ -809,8 +809,9 @@ public partial class NoteWindow : Window
                     }
                     else
                     {
-                        Left += step;
-                        Width -= step;
+                        var newWidth = Math.Max(MinWidth, Width - step);
+                        Left += Width - newWidth;
+                        Width = newWidth;
                     }
                     break;
                 case Key.Up:
@@ -821,7 +822,7 @@ public partial class NoteWindow : Window
                     }
                     else
                     {
-                        Height -= step;
+                        Height = Math.Max(MinHeight, Height - step);
                     }
                     break;
                 case Key.Down:
@@ -831,8 +832,9 @@ public partial class NoteWindow : Window
                     }
                     else
                     {
-                        Top += step;
-                        Height -= step;
+                        var newHeight = Math.Max(MinHeight, Height - step);
+                        Top += Height - newHeight;
+                        Height = newHeight;
                     }
                     break;
             }
