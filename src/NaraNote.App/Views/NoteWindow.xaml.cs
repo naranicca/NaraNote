@@ -1585,7 +1585,25 @@ public partial class NoteWindow : Window
         };
         Editor.SyntaxHighlighting = highlighting;
         Editor.ShowLineNumbers = highlighting is not null && _note.SyntaxLanguage != "Markdown";
+        AdjustLineNumberMarginSpacing();
     }
+
+    private void AdjustLineNumberMarginSpacing()
+    {
+        var margins = Editor.TextArea.LeftMargins;
+        for (var i = 0; i < margins.Count; i++)
+        {
+            if (margins[i] is not ICSharpCode.AvalonEdit.Editing.LineNumberMargin lineNumberMargin) continue;
+            if (i + 1 < margins.Count && ICSharpCode.AvalonEdit.Editing.DottedLineMargin.IsDottedLineMargin(margins[i + 1]))
+                margins.RemoveAt(i + 1);
+            var charWidth = new FormattedText("0", System.Globalization.CultureInfo.CurrentUICulture,
+                System.Windows.FlowDirection.LeftToRight, new Typeface(Editor.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+                Editor.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip).WidthIncludingTrailingWhitespace;
+            lineNumberMargin.Margin = new Thickness(0, 0, charWidth * 3, 0);
+            break;
+        }
+    }
+
     private static IHighlightingDefinition? LoadLuaHighlighting()
     {
         if (_luaHighlighting is not null) return _luaHighlighting;
