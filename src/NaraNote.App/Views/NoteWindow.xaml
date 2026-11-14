@@ -153,7 +153,19 @@
       TextChanged="Editor_TextChanged" PreviewKeyDown="Editor_PreviewKeyDown"/>
     <Canvas x:Name="ImeCompositionCanvas" IsHitTestVisible="False" ClipToBounds="True"/>
     <Canvas x:Name="ObjectCanvas" Background="{x:Null}" ClipToBounds="True"/>
-    <InkCanvas x:Name="Ink" Background="Transparent" EditingMode="None" IsHitTestVisible="False" StrokeCollected="Ink_StrokeCollected"/>
+    <!-- Ink/Highlighter strokes are stored in document (unscrolled) coordinates and shifted back into
+         view by InkScrollTransform/HighlighterScrollTransform, which NoteWindow keeps in sync with the
+         editor's scroll offset, so drawings stay anchored to the text they mark as the note scrolls. -->
+    <InkCanvas x:Name="Ink" Background="Transparent" EditingMode="None" IsHitTestVisible="False" StrokeCollected="Ink_StrokeCollected">
+     <InkCanvas.RenderTransform>
+      <TranslateTransform x:Name="InkScrollTransform"/>
+     </InkCanvas.RenderTransform>
+    </InkCanvas>
+    <InkCanvas x:Name="Highlighter" Background="Transparent" EditingMode="None" IsHitTestVisible="False" StrokeCollected="Highlighter_StrokeCollected">
+     <InkCanvas.RenderTransform>
+      <TranslateTransform x:Name="HighlighterScrollTransform"/>
+     </InkCanvas.RenderTransform>
+    </InkCanvas>
     <Border x:Name="SearchBar" Width="300" Height="38" Margin="8,8,8,0" HorizontalAlignment="Center" VerticalAlignment="Top" Visibility="Collapsed"
             Background="#F8FFFFFF" BorderBrush="#38000000" BorderThickness="1" CornerRadius="12" Panel.ZIndex="100">
      <Border.Effect><DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.18"/></Border.Effect>

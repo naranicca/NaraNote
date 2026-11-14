@@ -102,6 +102,11 @@ public static class UiText
         Add("fr", ("RepeatMonthly", "Chaque mois le même jour"));
         Add("es", ("RepeatMonthly", "Cada mes el mismo día"));
         Add("vi", ("RepeatMonthly", "Hàng tháng vào cùng ngày"));
+        Add("en", ("HighlighterMode", "Highlighter mode"));
+        Add("ko", ("HighlighterMode", "형광펜 모드"));
+        Add("fr", ("HighlighterMode", "Mode surligneur"));
+        Add("es", ("HighlighterMode", "Modo resaltador"));
+        Add("vi", ("HighlighterMode", "Chế độ bút đánh dấu"));
     }
 
     private static void Add(string language, params (string Key, string Value)[] values)

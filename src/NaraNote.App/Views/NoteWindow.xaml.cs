@@ -26,6 +26,7 @@ using NaraNote.Infrastructure.Persistence;
 using Microsoft.Win32;
 using ICSharpCode.AvalonEdit.Highlighting;
 using ICSharpCode.AvalonEdit.Highlighting.Xshd;
+using ICSharpCode.AvalonEdit.Rendering;
 using System.Xml;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -94,11 +95,15 @@ public partial class NoteWindow : Window
     private bool _stylusResizeActive;
     private InkCanvasEditingMode _inkModeBeforeStylusResize;
     private bool _inkHitTestBeforeStylusResize;
+    private InkCanvasEditingMode _highlighterModeBeforeStylusResize;
+    private bool _highlighterHitTestBeforeStylusResize;
     private bool _inkInputActive;
     private ContextMenu? _noteContextMenu;
     private MenuItem? _reminderMenuItem;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
+    private const double InkScrollSpacerBuffer = 24d;
+    private double _inkScrollSpacerHeight;
     private bool _imeCompositionActive;
     private HwndSource? _imeHwndSource;
     private DateTime _observedExportWriteUtc;
@@ -146,12 +151,21 @@ public partial class NoteWindow : Window
         AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Resize_PreviewStylusUp), true);
         Surface.PreviewMouseLeftButtonDown += Surface_PreviewMouseLeftButtonDown;
         Ink.PreviewStylusDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
-        Ink.PreviewStylusMove += (_, e) => { if (_inkInputActive) AutoExpandForInk(e.GetPosition(Ink)); };
+        Ink.PreviewStylusMove += (_, e) => { if (_inkInputActive) AutoExpandForInk(e.GetPosition(Surface)); };
         Ink.PreviewStylusUp += (_, _) => _inkInputActive = false;
         Ink.PreviewMouseLeftButtonDown += (_, _) => _inkInputActive = Ink.EditingMode == InkCanvasEditingMode.Ink;
-        Ink.PreviewMouseMove += (_, e) => { if (_inkInputActive && e.LeftButton == MouseButtonState.Pressed) AutoExpandForInk(e.GetPosition(Ink)); };
+        Ink.PreviewMouseMove += (_, e) => { if (_inkInputActive && e.LeftButton == MouseButtonState.Pressed) AutoExpandForInk(e.GetPosition(Surface)); };
         Ink.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
         Ink.StrokeErasing += Ink_StrokeErasing;
+        Highlighter.PreviewStylusDown += (_, _) => _inkInputActive = Highlighter.EditingMode == InkCanvasEditingMode.Ink;
+        Highlighter.PreviewStylusUp += (_, _) => _inkInputActive = false;
+        Highlighter.PreviewMouseLeftButtonDown += (_, _) => _inkInputActive = Highlighter.EditingMode == InkCanvasEditingMode.Ink;
+        Highlighter.PreviewMouseLeftButtonUp += (_, _) => _inkInputActive = false;
+        Highlighter.StrokeErasing += Highlighter_StrokeErasing;
+        Editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => UpdateScrollTransforms();
+        Editor.TextArea.TextView.ElementGenerators.Add(new EndOfDocumentSpacerGenerator(() => _inkScrollSpacerHeight));
+        Ink.Strokes.StrokesChanged += (_, _) => UpdateInkScrollSpacer();
+        Highlighter.Strokes.StrokesChanged += (_, _) => UpdateInkScrollSpacer();
         Ink.AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Ink_PreviewStylusDownForObjectSelection), true);
         Ink.AddHandler(Stylus.PreviewStylusMoveEvent, new StylusEventHandler(Ink_PreviewStylusMoveForObjectDrag), true);
         Ink.AddHandler(Stylus.PreviewStylusUpEvent, new StylusEventHandler(Ink_PreviewStylusUpForObjectDrag), true);
@@ -165,7 +179,11 @@ public partial class NoteWindow : Window
         AddHandler(DragDrop.PreviewDragOverEvent, new System.Windows.DragEventHandler(Surface_DragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new System.Windows.DragEventHandler(Surface_Drop), true);
         LocationChanged += (_, _) => { if (_reminderAnimationActive) return; _note.Left = Left; _note.Top = Top; TouchLayout(); };
-        SizeChanged += (_, _) => { _note.Width = Width; _note.Height = Height; _controller.RememberFileParameterNoteSize(_note); UpdateSearchBarLayout(); UpdateExportPathDisplay(); TouchLayout(); };
+        SizeChanged += (_, _) =>
+        {
+            _note.Width = Width; _note.Height = Height; _controller.RememberFileParameterNoteSize(_note); UpdateSearchBarLayout(); UpdateExportPathDisplay(); TouchLayout();
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(UpdateInkScrollSpacer));
+        };
         Activated += NoteWindow_Activated;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(Window_PreviewKeyDown), true);
         PreviewKeyUp += Window_PreviewKeyUp;
@@ -438,6 +456,65 @@ public partial class NoteWindow : Window
         Ink.DefaultDrawingAttributes.StylusTip = StylusTip.Ellipse;
         SetPenThickness(Math.Clamp(settings.DefaultPenThickness, 1d, 10d), false);
     }
+    private void ApplyHighlighterSettings()
+    {
+        Highlighter.DefaultDrawingAttributes.Color = MakeHighlighterColor(Ink.DefaultDrawingAttributes.Color);
+        Highlighter.DefaultDrawingAttributes.IsHighlighter = true;
+        Highlighter.DefaultDrawingAttributes.IgnorePressure = true;
+        Highlighter.DefaultDrawingAttributes.FitToCurve = false;
+        Highlighter.DefaultDrawingAttributes.StylusTip = StylusTip.Rectangle;
+        Highlighter.DefaultDrawingAttributes.Width = Ink.DefaultDrawingAttributes.Width;
+        Highlighter.DefaultDrawingAttributes.Height = Math.Max(10, Editor.FontSize * 1.15);
+    }
+    private static Color MakeHighlighterColor(Color penColor) => Color.FromArgb(90, penColor.R, penColor.G, penColor.B);
+    private void UpdateScrollTransforms()
+    {
+        var offset = Editor.TextArea.TextView.ScrollOffset;
+        InkScrollTransform.X = -offset.X;
+        InkScrollTransform.Y = -offset.Y;
+        HighlighterScrollTransform.X = -offset.X;
+        HighlighterScrollTransform.Y = -offset.Y;
+    }
+    private double ComputeMaxInkBottom()
+    {
+        var max = 0d;
+        foreach (var stroke in Ink.Strokes) { var bottom = stroke.GetBounds().Bottom; if (bottom > max) max = bottom; }
+        foreach (var stroke in Highlighter.Strokes) { var bottom = stroke.GetBounds().Bottom; if (bottom > max) max = bottom; }
+        return max;
+    }
+    private void UpdateInkScrollSpacer()
+    {
+        var maxBottom = ComputeMaxInkBottom();
+        var viewportHeight = Editor.TextArea.TextView.ActualHeight;
+        if (maxBottom <= viewportHeight)
+        {
+            if (_inkScrollSpacerHeight == 0) return;
+            _inkScrollSpacerHeight = 0;
+            Editor.TextArea.TextView.Redraw();
+            return;
+        }
+        var textOnlyHeight = Math.Max(0, Editor.TextArea.TextView.DocumentHeight - _inkScrollSpacerHeight);
+        var required = Math.Max(0, maxBottom - textOnlyHeight + InkScrollSpacerBuffer);
+        if (Math.Abs(required - _inkScrollSpacerHeight) < 1d) return;
+        _inkScrollSpacerHeight = required;
+        Editor.TextArea.TextView.Redraw();
+    }
+    private sealed class EndOfDocumentSpacerGenerator(Func<double> heightProvider) : VisualLineElementGenerator
+    {
+        public override int GetFirstInterestedOffset(int startOffset)
+        {
+            var end = CurrentContext.Document.TextLength;
+            return startOffset <= end ? end : -1;
+        }
+        public override VisualLineElement? ConstructElement(int offset)
+        {
+            if (offset != CurrentContext.Document.TextLength) return null;
+            var height = heightProvider();
+            if (height <= 0) return null;
+            var spacer = new System.Windows.Shapes.Rectangle { Width = 0, Height = height, Fill = Brushes.Transparent, IsHitTestVisible = false, Focusable = false };
+            return new InlineObjectElement(0, spacer);
+        }
+    }
     private void ApplyAppearance()
     {
         try
@@ -462,8 +539,10 @@ public partial class NoteWindow : Window
         UpdateExportPathDisplay();
         Foreground = foreground; Editor.Foreground = foreground; Editor.FontSize = _note.FontSize; Editor.FontFamily = new FontFamily(_note.FontFamily);
         Editor.TextArea.SelectionCornerRadius = Math.Clamp(Editor.FontSize * 0.18, 1.5, 6.0);
+        ApplyHighlighterSettings();
         ApplySyntaxHighlighting();
         ApplyCaptionTypography();
+        UpdateInkScrollSpacer();
     }
     private void ApplyCaptionTypography()
     {
@@ -596,8 +675,12 @@ public partial class NoteWindow : Window
         _stylusResizeActive = true;
         _inkModeBeforeStylusResize = Ink.EditingMode;
         _inkHitTestBeforeStylusResize = Ink.IsHitTestVisible;
+        _highlighterModeBeforeStylusResize = Highlighter.EditingMode;
+        _highlighterHitTestBeforeStylusResize = Highlighter.IsHitTestVisible;
         Ink.EditingMode = InkCanvasEditingMode.None;
         Ink.IsHitTestVisible = false;
+        Highlighter.EditingMode = InkCanvasEditingMode.None;
+        Highlighter.IsHitTestVisible = false;
         _inkInputActive = false;
         ResetShiftLineMode();
         Stylus.Capture(this, CaptureMode.SubTree);
@@ -605,7 +688,13 @@ public partial class NoteWindow : Window
     }
     private void Resize_PreviewStylusMove(object sender, StylusEventArgs e)
     {
-        if (_resizeEdge == 0 || !ReferenceEquals(Stylus.Captured, this)) return;
+        if (_resizeEdge == 0)
+        {
+            var point = e.GetPosition(this);
+            Mouse.OverrideCursor = IsPointerOverHeaderButton(point) ? null : CursorForEdge(GetInteractiveResizeEdge(point));
+            return;
+        }
+        if (!ReferenceEquals(Stylus.Captured, this)) return;
         ApplyStylusResizePosition(e);
         e.Handled = true;
     }
@@ -637,6 +726,8 @@ public partial class NoteWindow : Window
         var restoreStylusMode = _stylusResizeActive;
         var previousMode = _inkModeBeforeStylusResize;
         var previousHitTest = _inkHitTestBeforeStylusResize;
+        var previousHighlighterMode = _highlighterModeBeforeStylusResize;
+        var previousHighlighterHitTest = _highlighterHitTestBeforeStylusResize;
         _stylusResizeActive = false;
         _resizeEdge = 0;
         if (Mouse.Captured is not null) Mouse.Capture(null);
@@ -648,6 +739,8 @@ public partial class NoteWindow : Window
         {
             Ink.IsHitTestVisible = previousHitTest;
             Ink.EditingMode = previousMode;
+            Highlighter.IsHitTestVisible = previousHighlighterHitTest;
+            Highlighter.EditingMode = previousHighlighterMode;
         }));
     }
     private bool IsPointerOverHeaderButton(System.Windows.Point point)
@@ -672,7 +765,7 @@ public partial class NoteWindow : Window
         1 or 2 => Cursors.SizeWE, 4 or 8 => Cursors.SizeNS, 5 or 10 => Cursors.SizeNWSE,
         6 or 9 => Cursors.SizeNESW, _ => null
     };
-    private void Editor_TextChanged(object? sender, EventArgs e) { if (!_loading) _vm.Text = Editor.Text; }
+    private void Editor_TextChanged(object? sender, EventArgs e) { if (!_loading) _vm.Text = Editor.Text; UpdateInkScrollSpacer(); }
     private void TouchLayout()
     {
         _note.LastModifiedUtc = DateTimeOffset.UtcNow;
@@ -864,36 +957,64 @@ public partial class NoteWindow : Window
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
         if (ctrl && e.Key == Key.F) { OpenSearch(); e.Handled = true; return; }
         if (e.Key == Key.Escape && SearchBar.Visibility == Visibility.Visible) { CloseSearch(); e.Handled = true; return; }
-        if (e.Key == Key.F8 || e.SystemKey == Key.F8) { SwitchToPenMode(); e.Handled = true; return; }
+        if (e.Key == Key.F5 || e.SystemKey == Key.F5) { SwitchToTextMode(); e.Handled = true; return; }
+        if (e.Key == Key.F6 || e.SystemKey == Key.F6) { SwitchToHighlighterMode(); e.Handled = true; return; }
+        if (e.Key == Key.F7 || e.SystemKey == Key.F7) { SwitchToPenMode(); e.Handled = true; return; }
+        if (e.Key == Key.F8 || e.SystemKey == Key.F8) { SwitchToEraserMode(); e.Handled = true; return; }
         if (e.Key == Key.F10 || e.SystemKey == Key.F10) { OpenNoteMenu(true); e.Handled = true; return; }
         if (e.Key == Key.Escape && IsDrawingToolActive()) { SwitchToTextMode(); e.Handled = true; return; }
         if (ctrl && e.Key == Key.S) { _ = ExportCurrentNoteAsync(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Add || e.Key == Key.OemPlus)) { ChangePenThickness(1); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.Subtract || e.Key == Key.OemMinus)) { ChangePenThickness(-1); e.Handled = true; }
         else if (ctrl && Ink.EditingMode == InkCanvasEditingMode.Ink && (e.Key == Key.D0 || e.Key == Key.NumPad0)) { SetPenThickness(DefaultPenThickness); e.Handled = true; }
-        else if (ctrl && e.Key == Key.Z && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None)) { _history.Undo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
-        else if (ctrl && (e.Key == Key.Y || (e.Key == Key.Z && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))) && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None)) { _history.Redo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
+        else if (ctrl && e.Key == Key.Z && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None || Highlighter.EditingMode != InkCanvasEditingMode.None)) { _history.Undo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
+        else if (ctrl && (e.Key == Key.Y || (e.Key == Key.Z && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))) && (_selectedElement is not null || Ink.EditingMode != InkCanvasEditingMode.None || Highlighter.EditingMode != InkCanvasEditingMode.None)) { _history.Redo(); RestoreElements(); RestoreInk(); _vm.Touch(); e.Handled = true; }
         else if (e.Key == Key.Delete && _selectedElement is not null) { DeleteElement(_selectedElement); e.Handled = true; }
         else if (e.Key == Key.Escape) ClearObjectSelection();
     }
-    private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || _inkInputActive;
+    private bool IsDrawingToolActive() => Ink.EditingMode != InkCanvasEditingMode.None || Ink.IsHitTestVisible || Highlighter.EditingMode != InkCanvasEditingMode.None || Highlighter.IsHitTestVisible || _inkInputActive;
     private void SwitchToPenMode()
     {
         StopTextScrollInertia();
         ClearObjectSelection();
+        Highlighter.EditingMode = InkCanvasEditingMode.None;
+        Highlighter.IsHitTestVisible = false;
+        UpdateScrollTransforms();
         Ink.IsHitTestVisible = true;
         Ink.EditingMode = InkCanvasEditingMode.Ink;
         UpdateShiftLineCursor();
+    }
+    private void SwitchToHighlighterMode()
+    {
+        StopTextScrollInertia();
+        ClearObjectSelection();
+        ResetShiftLineMode();
+        Ink.EditingMode = InkCanvasEditingMode.None;
+        Ink.IsHitTestVisible = false;
+        UpdateScrollTransforms();
+        Highlighter.IsHitTestVisible = true;
+        Highlighter.EditingMode = InkCanvasEditingMode.Ink;
     }
     private void SwitchToTextMode()
     {
         Ink.EditingMode = InkCanvasEditingMode.None;
         Ink.IsHitTestVisible = false;
+        Highlighter.EditingMode = InkCanvasEditingMode.None;
+        Highlighter.IsHitTestVisible = false;
         _inkInputActive = false;
         ResetShiftLineMode();
         ClearObjectSelection();
         Editor.Focus();
         Keyboard.Focus(Editor);
+    }
+    private void SwitchToEraserMode()
+    {
+        if (Ink.Strokes.Count == 0 && Highlighter.Strokes.Count == 0) return;
+        StopTextScrollInertia();
+        ClearObjectSelection();
+        Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke;
+        Highlighter.IsHitTestVisible = true; Highlighter.EditingMode = InkCanvasEditingMode.EraseByStroke;
+        ResetShiftLineMode();
     }
     private void Window_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -911,6 +1032,7 @@ public partial class NoteWindow : Window
     {
         Ink.DefaultDrawingAttributes.Width = thickness;
         Ink.DefaultDrawingAttributes.Height = thickness;
+        Highlighter.DefaultDrawingAttributes.Width = thickness;
         if (saveSetting)
         {
             _controller.State.Settings.DefaultPenThickness = thickness;
@@ -1414,13 +1536,39 @@ public partial class NoteWindow : Window
     private void RestoreElements() { var selected = _selectedElement; ObjectCanvas.Children.Clear(); _selectedVisual = null; foreach (var e in _note.Elements.OrderBy(x => x.ZIndex)) { if (e is ImageElement i) RenderImage(i); else if (e is FileAttachmentElement f) RenderAttachment(f); } if (selected is not null && _note.Elements.Contains(selected)) SelectObject(selected); }
     private void RestoreInk()
     {
-        Ink.Strokes.Clear(); foreach (var data in _note.Elements.OfType<InkStrokeElement>()) { var points = new StylusPointCollection(data.Points.Select(p => new StylusPoint(p.X, p.Y, p.Pressure))); var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = (Color)ColorConverter.ConvertFromString(data.Color), Width = data.Thickness, Height = data.Thickness, IgnorePressure = false, FitToCurve = true, StylusTip = StylusTip.Ellipse } }; SetStrokeId(stroke, data.Id); Ink.Strokes.Add(stroke); }
+        Ink.Strokes.Clear(); Highlighter.Strokes.Clear();
+        foreach (var data in _note.Elements.OfType<InkStrokeElement>())
+        {
+            var points = new StylusPointCollection(data.Points.Select(p => new StylusPoint(p.X, p.Y, p.Pressure)));
+            var color = (Color)ColorConverter.ConvertFromString(data.Color);
+            if (data.IsHighlighter)
+            {
+                var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = color, Width = data.Thickness, Height = data.HighlighterTipHeight > 0 ? data.HighlighterTipHeight : data.Thickness, IgnorePressure = true, FitToCurve = false, StylusTip = StylusTip.Rectangle, IsHighlighter = true } };
+                SetStrokeId(stroke, data.Id); Highlighter.Strokes.Add(stroke);
+            }
+            else
+            {
+                var stroke = new Stroke(points) { DrawingAttributes = new DrawingAttributes { Color = color, Width = data.Thickness, Height = data.Thickness, IgnorePressure = false, FitToCurve = true, StylusTip = StylusTip.Ellipse } };
+                SetStrokeId(stroke, data.Id); Ink.Strokes.Add(stroke);
+            }
+        }
     }
-    private void PersistInk() { _note.Elements.RemoveAll(x => x is InkStrokeElement); foreach (var s in Ink.Strokes) _note.Elements.Add(CreateInkElement(s)); }
+    private void PersistInk()
+    {
+        _note.Elements.RemoveAll(x => x is InkStrokeElement);
+        foreach (var s in Ink.Strokes) _note.Elements.Add(CreateInkElement(s));
+        foreach (var s in Highlighter.Strokes) _note.Elements.Add(CreateHighlighterElement(s));
+    }
     private static InkStrokeElement CreateInkElement(Stroke stroke) => new()
     {
         Id = TryGetStrokeId(stroke, out var id) ? id : Guid.NewGuid(),
         Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width,
+        Points = stroke.StylusPoints.Select(p => new InkPointData(p.X, p.Y, p.PressureFactor)).ToList()
+    };
+    private static InkStrokeElement CreateHighlighterElement(Stroke stroke) => new()
+    {
+        Id = TryGetStrokeId(stroke, out var id) ? id : Guid.NewGuid(),
+        IsHighlighter = true, Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width, HighlighterTipHeight = stroke.DrawingAttributes.Height,
         Points = stroke.StylusPoints.Select(p => new InkPointData(p.X, p.Y, p.PressureFactor)).ToList()
     };
     private void Ink_StrokeErasing(object sender, InkCanvasStrokeErasingEventArgs erased)
@@ -1435,12 +1583,24 @@ public partial class NoteWindow : Window
         }
         _vm.Touch();
     }
+    private void Highlighter_StrokeErasing(object sender, InkCanvasStrokeErasingEventArgs erased)
+    {
+        var removed = TryGetStrokeId(erased.Stroke, out var id) ? _note.Elements.OfType<InkStrokeElement>().FirstOrDefault(stroke => stroke.Id == id && stroke.IsHighlighter) : null;
+        if (removed is not null)
+            _history.Execute(new DelegateCommand(() => _note.Elements.Remove(removed), () => _note.Elements.Add(removed)));
+        else
+        {
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => { PersistInk(); _vm.Touch(); }));
+            return;
+        }
+        _vm.Touch();
+    }
     private void Ink_StrokeCollected(object sender, InkCanvasStrokeCollectedEventArgs e)
         => ProcessInkStroke(e.Stroke);
     private void ProcessInkStroke(Stroke stroke)
     {
         var now = Environment.TickCount64; var pts = stroke.StylusPoints.Select((p, i) => new InkPointData(p.X, p.Y, p.PressureFactor, now - (stroke.StylusPoints.Count - i) * 8)).ToList();
-        var existing = _note.Elements.OfType<InkStrokeElement>().ToList(); var result = _scribble.Analyze(pts, existing);
+        var existing = _note.Elements.OfType<InkStrokeElement>().Where(x => !x.IsHighlighter).ToList(); var result = _scribble.Analyze(pts, existing);
         if (result.IsScribble && result.TargetStrokeIds.Count > 0)
         {
             Ink.Strokes.Remove(stroke); var removed = existing.Where(x => result.TargetStrokeIds.Contains(x.Id)).ToList();
@@ -1452,6 +1612,17 @@ public partial class NoteWindow : Window
             SetStrokeId(stroke, added.Id);
             _history.Execute(new DelegateCommand(() => { if (!_note.Elements.Contains(added)) _note.Elements.Add(added); }, () => _note.Elements.Remove(added)));
         }
+        _vm.Touch();
+    }
+    private void Highlighter_StrokeCollected(object sender, InkCanvasStrokeCollectedEventArgs e)
+        => ProcessHighlighterStroke(e.Stroke);
+    private void ProcessHighlighterStroke(Stroke stroke)
+    {
+        var now = Environment.TickCount64;
+        var pts = stroke.StylusPoints.Select((p, i) => new InkPointData(p.X, p.Y, p.PressureFactor, now - (stroke.StylusPoints.Count - i) * 8)).ToList();
+        var added = new InkStrokeElement { Points = pts, IsHighlighter = true, Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width, HighlighterTipHeight = stroke.DrawingAttributes.Height };
+        SetStrokeId(stroke, added.Id);
+        _history.Execute(new DelegateCommand(() => { if (!_note.Elements.Contains(added)) _note.Elements.Add(added); }, () => _note.Elements.Remove(added)));
         _vm.Touch();
     }
     private static void SetStrokeId(Stroke stroke, Guid id) => stroke.AddPropertyData(StrokeIdProperty, id.ToString("D"));
@@ -1468,23 +1639,30 @@ public partial class NoteWindow : Window
         _noteContextMenu = menu;
         AddTextEditingMenus(menu);
         menu.Items.Add(new Separator());
-        var select = new MenuItem { Header = UiText.Get("TextMode"), IsCheckable = true };
-        var pen = new MenuItem { Header = UiText.Get("PenMode"), IsCheckable = true, InputGestureText = "F8" };
-        var erase = new MenuItem { Header = UiText.Get("EraserMode"), IsCheckable = true };
+        var select = new MenuItem { Header = UiText.Get("TextMode"), IsCheckable = true, InputGestureText = "F5" };
+        var highlighter = new MenuItem { Header = UiText.Get("HighlighterMode"), IsCheckable = true, InputGestureText = "F6" };
+        var pen = new MenuItem { Header = UiText.Get("PenMode"), IsCheckable = true, InputGestureText = "F7" };
+        var erase = new MenuItem { Header = UiText.Get("EraserMode"), IsCheckable = true, InputGestureText = "F8" };
         void UpdateToolModeMenu()
         {
-            var hasInk = Ink.Strokes.Count > 0;
-            if (!hasInk && Ink.EditingMode == InkCanvasEditingMode.EraseByStroke) { Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false; }
-            select.IsChecked = Ink.EditingMode == InkCanvasEditingMode.None;
+            var hasInk = Ink.Strokes.Count > 0 || Highlighter.Strokes.Count > 0;
+            if (!hasInk && (Ink.EditingMode == InkCanvasEditingMode.EraseByStroke || Highlighter.EditingMode == InkCanvasEditingMode.EraseByStroke))
+            {
+                Ink.EditingMode = InkCanvasEditingMode.None; Ink.IsHitTestVisible = false;
+                Highlighter.EditingMode = InkCanvasEditingMode.None; Highlighter.IsHitTestVisible = false;
+            }
+            select.IsChecked = Ink.EditingMode == InkCanvasEditingMode.None && Highlighter.EditingMode == InkCanvasEditingMode.None;
+            highlighter.IsChecked = Highlighter.EditingMode == InkCanvasEditingMode.Ink;
             pen.IsChecked = Ink.EditingMode == InkCanvasEditingMode.Ink;
-            erase.IsChecked = Ink.EditingMode == InkCanvasEditingMode.EraseByStroke;
+            erase.IsChecked = Ink.EditingMode == InkCanvasEditingMode.EraseByStroke || Highlighter.EditingMode == InkCanvasEditingMode.EraseByStroke;
             erase.Visibility = hasInk ? Visibility.Visible : Visibility.Collapsed;
         }
         select.Click += (_, _) => { SwitchToTextMode(); UpdateToolModeMenu(); };
+        highlighter.Click += (_, _) => { SwitchToHighlighterMode(); UpdateToolModeMenu(); };
         pen.Click += (_, _) => { SwitchToPenMode(); UpdateToolModeMenu(); };
-        erase.Click += (_, _) => { Ink.IsHitTestVisible = true; Ink.EditingMode = InkCanvasEditingMode.EraseByStroke; ResetShiftLineMode(); UpdateToolModeMenu(); };
+        erase.Click += (_, _) => { SwitchToEraserMode(); UpdateToolModeMenu(); };
         menu.Opened += (_, _) => UpdateToolModeMenu();
-        menu.Items.Add(select); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu);
+        menu.Items.Add(select); menu.Items.Add(highlighter); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu);
         menu.Items.Add(new Separator());
         AddSyntaxLanguageMenu(menu); AddNoteColorMenu(menu);
         menu.Items.Add(new Separator());
@@ -1717,6 +1895,11 @@ public partial class NoteWindow : Window
             Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width,
             Points = stroke.StylusPoints.Select(point => new InkPointData(point.X, point.Y, point.PressureFactor)).ToList()
         }));
+        elements.AddRange(Highlighter.Strokes.Select(stroke => (NoteElement)new InkStrokeElement
+        {
+            IsHighlighter = true, Color = stroke.DrawingAttributes.Color.ToString(), Thickness = stroke.DrawingAttributes.Width,HighlighterTipHeight = stroke.DrawingAttributes.Height,
+            Points = stroke.StylusPoints.Select(point => new InkPointData(point.X, point.Y, point.PressureFactor)).ToList()
+        }));
         return new NoteData
         {
             Id = _note.Id, Width = Width, Height = Height, Color = _note.Color, FontFamily = _note.FontFamily,
@@ -1891,7 +2074,7 @@ public partial class NoteWindow : Window
         {
             var swatch = new System.Windows.Controls.Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(2), BorderBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0)), BorderThickness = new Thickness(1), Background = new SolidColorBrush(value) };
             var item = new MenuItem { Header = name, Icon = swatch, IsCheckable = true, IsChecked = Ink.DefaultDrawingAttributes.Color == value };
-            item.Click += (_, _) => { Ink.DefaultDrawingAttributes.Color = value; _controller.State.Settings.DefaultPenColor = value.ToString(); _controller.ScheduleSave(); foreach (MenuItem sibling in colors.Items) sibling.IsChecked = ReferenceEquals(sibling, item); }; colors.Items.Add(item);
+            item.Click += (_, _) => { Ink.DefaultDrawingAttributes.Color = value; Highlighter.DefaultDrawingAttributes.Color = MakeHighlighterColor(value); _controller.State.Settings.DefaultPenColor = value.ToString(); _controller.ScheduleSave(); foreach (MenuItem sibling in colors.Items) sibling.IsChecked = ReferenceEquals(sibling, item); }; colors.Items.Add(item);
         }
         var widths = new MenuItem { Header = UiText.Get("PenThickness") };
         foreach (var (name, value) in new[] { (UiText.Get("VeryThin"), 1d), (UiText.Get("Thin"), 2d), (UiText.Get("Normal"), DefaultPenThickness), (UiText.Get("Thick"), 6d), (UiText.Get("VeryThick"), 10d) })

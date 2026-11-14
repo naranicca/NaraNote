@@ -109,6 +109,8 @@ public sealed class InkStrokeElement : NoteElement
     public string Color { get; set; } = "#FF222222";
     public double Thickness { get; set; } = 3.5;
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsHighlighter { get; set; }
+    public double HighlighterTipHeight { get; set; }
 }
 
 public readonly record struct InkPointData(double X, double Y, float Pressure = 0.5f, long TimestampMs = 0);
