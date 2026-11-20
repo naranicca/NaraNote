@@ -77,7 +77,7 @@ public sealed class AppController : IDisposable
         note.IsFileParameterNote = true;
         PlaceFileParameterNoteCentered(note);
         State.Notes.Add(note);
-        Show(note);
+        Show(note, center: true);
         ScheduleSave();
         if (_windows.TryGetValue(note.Id, out var window)) window.OpenDroppedFile(path);
     }
@@ -88,7 +88,7 @@ public sealed class AppController : IDisposable
         State.Settings.FileParameterNoteHeight = Math.Max(160, note.Height);
     }
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
-    public void Show(NoteData note, bool clearHiddenState = true)
+    public void Show(NoteData note, bool clearHiddenState = true, bool center = false)
     {
         ClearMissingExportPath(note);
         note.IsOpen = true;
@@ -104,6 +104,7 @@ public sealed class AppController : IDisposable
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Show();
         window.Visibility = Visibility.Visible;
+        EnsureFullyVisible(window, center);
         RefreshTaskbarProxy();
         window.Activate();
         window.FocusEditor();
@@ -201,7 +202,7 @@ public sealed class AppController : IDisposable
         {
             var note = State.Notes.First(note => note.Id == id);
             note.IsHidden = !visible;
-            if (visible) window.Show(); else window.Hide();
+            if (visible) { window.Show(); EnsureFullyVisible(window); } else window.Hide();
         }
         RefreshTaskbarProxy();
         ScheduleSave();
@@ -280,6 +281,35 @@ public sealed class AppController : IDisposable
         var area = screen.WorkingArea;
         note.Left = area.Left + (area.Width - note.Width) / 2;
         note.Top = area.Top + (area.Height - note.Height) / 2;
+    }
+    // Screen work areas are physical pixels while window bounds are DIPs, so the final check runs on the
+    // shown window and converts its monitor's work area into the window's own coordinate space.
+    private static void EnsureFullyVisible(Window window, bool center = false)
+    {
+        // Moving onto a monitor with a different DPI can rescale the window, so re-check a few times.
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (!TryGetWorkAreaInDips(window, out var area)) return;
+            var current = new RectData(window.Left, window.Top, window.Width, window.Height);
+            if (center && attempt == 0)
+                current = current with { X = area.X + (area.Width - current.Width) / 2, Y = area.Y + (area.Height - current.Height) / 2 };
+            var target = NaraNote.Core.Utilities.WindowPlacement.ClampFullyVisible(current, area);
+            if (Math.Abs(target.X - window.Left) < 0.5 && Math.Abs(target.Y - window.Top) < 0.5 &&
+                Math.Abs(target.Width - window.Width) < 0.5 && Math.Abs(target.Height - window.Height) < 0.5) return;
+            window.Width = target.Width; window.Height = target.Height;
+            window.Left = target.X; window.Top = target.Y;
+        }
+    }
+    private static bool TryGetWorkAreaInDips(Window window, out RectData area)
+    {
+        area = default;
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == IntPtr.Zero || PresentationSource.FromVisual(window) is null) return false;
+        var pixels = Screen.FromHandle(hwnd).WorkingArea;
+        var topLeft = window.PointFromScreen(new System.Windows.Point(pixels.Left, pixels.Top));
+        var bottomRight = window.PointFromScreen(new System.Windows.Point(pixels.Right, pixels.Bottom));
+        area = new(window.Left + topLeft.X, window.Top + topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y);
+        return area.Width > 0 && area.Height > 0;
     }
     private NoteData? GetLastActiveNote()
     {
