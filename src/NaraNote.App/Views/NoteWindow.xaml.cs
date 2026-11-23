@@ -105,6 +105,7 @@ public partial class NoteWindow : Window
     private const double InkScrollSpacerBuffer = 24d;
     private double _inkScrollSpacerHeight;
     private bool _imeCompositionActive;
+    private double _imeCompositionWidth;
     private HwndSource? _imeHwndSource;
     private DateTime _observedExportWriteUtc;
     private long _observedExportLength = -1;
@@ -164,6 +165,7 @@ public partial class NoteWindow : Window
         Highlighter.StrokeErasing += Highlighter_StrokeErasing;
         Editor.TextArea.TextView.ScrollOffsetChanged += (_, _) => UpdateScrollTransforms();
         Editor.TextArea.TextView.ElementGenerators.Add(new EndOfDocumentSpacerGenerator(() => _inkScrollSpacerHeight));
+        Editor.TextArea.TextView.ElementGenerators.Add(new ImeCompositionSpacerGenerator(() => _imeCompositionActive ? Editor.CaretOffset : -1, () => _imeCompositionWidth));
         Ink.Strokes.StrokesChanged += (_, _) => UpdateInkScrollSpacer();
         Highlighter.Strokes.StrokesChanged += (_, _) => UpdateInkScrollSpacer();
         Ink.AddHandler(Stylus.PreviewStylusDownEvent, new StylusDownEventHandler(Ink_PreviewStylusDownForObjectSelection), true);
@@ -512,6 +514,22 @@ public partial class NoteWindow : Window
             var height = heightProvider();
             if (height <= 0) return null;
             var spacer = new System.Windows.Shapes.Rectangle { Width = 0, Height = height, Fill = Brushes.Transparent, IsHitTestVisible = false, Focusable = false };
+            return new InlineObjectElement(0, spacer);
+        }
+    }
+    private sealed class ImeCompositionSpacerGenerator(Func<int> offsetProvider, Func<double> widthProvider) : VisualLineElementGenerator
+    {
+        public override int GetFirstInterestedOffset(int startOffset)
+        {
+            var offset = offsetProvider();
+            return offset >= startOffset ? offset : -1;
+        }
+        public override VisualLineElement? ConstructElement(int offset)
+        {
+            if (offset != offsetProvider()) return null;
+            var width = widthProvider();
+            if (width <= 0) return null;
+            var spacer = new System.Windows.Shapes.Rectangle { Width = width, Height = 1, Fill = Brushes.Transparent, IsHitTestVisible = false, Focusable = false };
             return new InlineObjectElement(0, spacer);
         }
     }
@@ -2138,12 +2156,20 @@ public partial class NoteWindow : Window
         }
         if (_imeCompositionActive) return;
         _imeCompositionActive = true;
+        SetImeCompositionWidth(0);
         Editor.TextArea.Caret.Hide();
+    }
+    private void SetImeCompositionWidth(double width)
+    {
+        if (Math.Abs(width - _imeCompositionWidth) < 0.5) return;
+        _imeCompositionWidth = width;
+        Editor.TextArea.TextView.Redraw();
     }
     private void EndImeComposition()
     {
         if (!_imeCompositionActive) return;
         _imeCompositionActive = false;
+        SetImeCompositionWidth(0);
         ImeCompositionCanvas.Children.Clear();
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
         {
@@ -2179,10 +2205,11 @@ public partial class NoteWindow : Window
                 var result = ReadImeString(context, GcsResultStr);
                 if (result.Length > 0) InsertEditorText(result);
                 ImeCompositionCanvas.Children.Clear();
+                SetImeCompositionWidth(0);
                 if ((compositionFlags.ToInt64() & GcsCompStr) == 0) return;
             }
             var composition = ReadImeString(context, GcsCompStr);
-            if (composition.Length == 0) { ImeCompositionCanvas.Children.Clear(); return; }
+            if (composition.Length == 0) { ImeCompositionCanvas.Children.Clear(); SetImeCompositionWidth(0); return; }
             // The Microsoft Korean IME reports position 0 through the legacy IMM path
             // even though its visible composition caret belongs after the syllable.
             // Keep the inline pre-edit caret at the end, matching modern Windows editors.
@@ -2233,6 +2260,8 @@ public partial class NoteWindow : Window
         var formatted = new FormattedText(beforeCaret, System.Globalization.CultureInfo.CurrentUICulture,
             System.Windows.FlowDirection.LeftToRight, new Typeface(Editor.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
             Editor.FontSize, foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var hasTrailingText = Editor.CaretOffset < Editor.Document.TextLength;
+        SetImeCompositionWidth(hasTrailingText ? formatted.WidthIncludingTrailingWhitespace : 0);
         var caretLine = new System.Windows.Shapes.Line
         {
             X1 = origin.X + formatted.WidthIncludingTrailingWhitespace,
