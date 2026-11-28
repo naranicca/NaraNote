@@ -100,6 +100,8 @@ NaraNote uses a document surface rather than a plain WPF `TextBox`.
 
 Open the note menu and choose **Reminder...** to configure a reminder.
 
+The bell in the note header shows the time left until the next reminder. It counts down in seconds during the last minute.
+
 - One-time reminder
 - Daily at the same time
 - Weekly at the same time
@@ -136,6 +138,10 @@ The default is **System default**. If the Windows UI language is unsupported, Na
 | `Ctrl+N` | Create a new note |
 | `Ctrl+S` | Save/export the current note |
 | `Ctrl+Shift+S` | Save/export with a new name |
+| `Ctrl+F` | Find in this note. Expand the arrow to show replacement controls. |
+| `Ctrl+H` | Replace the current match or all matches in this note |
+| `Ctrl+Shift+F` | Search the text of open and hidden notes. Click a result or press Enter to open the note at that match. |
+| `Ctrl+Alt+H` | Hide the focused note |
 | `Ctrl+V` | Paste image, files, or text |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
@@ -148,7 +154,7 @@ The default is **System default**. If the Windows UI language is unsupported, Na
 Default global shortcuts:
 
 - `Ctrl+Alt+N`: create a note
-- `Ctrl+Alt+H`: show or hide notes
+- `Ctrl+Alt+H`: show or hide all notes when a note does not have focus
 
 Each global shortcut can be enabled independently and edited in Settings. Registration failures are logged rather than crashing the application.
 

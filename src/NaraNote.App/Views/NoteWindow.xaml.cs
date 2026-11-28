@@ -98,7 +98,7 @@ public partial class NoteWindow : Window
     private InkCanvasEditingMode _highlighterModeBeforeStylusResize;
     private bool _highlighterHitTestBeforeStylusResize;
     private bool _inkInputActive;
-    private ContextMenu? _noteContextMenu;
+    private ContextMenu? _headerMenu;
     private MenuItem? _reminderMenuItem;
     private System.Windows.Point? _shiftLineAnchor;
     private DateTime _lastInkAutoExpandUtc = DateTime.MinValue;
@@ -115,14 +115,19 @@ public partial class NoteWindow : Window
     private bool _reminderAnimationActive;
     private double _reminderOriginalLeft;
     private SoundPlayer? _reminderSoundPlayer;
-    private int _searchSelectionStart = -1;
+    private readonly NoteSearchResults _searchResults = new();
+    private readonly DispatcherTimer _countdownTimer = new(DispatcherPriority.Background);
+    private Task _activationFileCheck = Task.CompletedTask;
     public NoteWindow(NoteData note, AppController controller)
     {
         if (!note.IsSyntaxLanguageExplicit && note.SyntaxLanguage == "PlainText") note.SyntaxLanguage = "Auto";
         InitializeComponent(); _note = note; _controller = controller; _vm = new(note, controller.ScheduleSave); DataContext = _vm;
         Stylus.SetIsFlicksEnabled(this, false);
-        IsVisibleChanged += (_, _) => _controller.RefreshTaskbarProxy();
+        _countdownTimer.Tick += (_, _) => UpdateReminderCountdown();
+        IsVisibleChanged += (_, _) => { _controller.RefreshTaskbarProxy(); UpdateReminderCountdown(); };
         Editor.TextArea.SelectionBorder = null;
+        Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateSearchCounter();
+        Editor.TextArea.SelectionChanged += (_, _) => UpdateSearchCounter();
         Editor.TextArea.LostKeyboardFocus += Editor_LostKeyboardFocus;
         Editor.PreviewStylusDown += Editor_PreviewStylusDown;
         Editor.PreviewStylusMove += Editor_PreviewStylusMove;
@@ -196,14 +201,45 @@ public partial class NoteWindow : Window
         RememberExportFileVersion();
         _loading = false;
     }
-    public void FocusEditor()
+    public void FocusEditor(NoteBodyMatch? match = null)
     {
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ContextIdle, new Action(() =>
         {
+            if (match is not null)
+            {
+                FocusSearchResult(match);
+                return;
+            }
             FocusEditorTextArea(true);
             _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
                 new Action(() => FocusEditorTextArea(false)));
         }));
+    }
+    private async void FocusSearchResult(NoteBodyMatch hit)
+    {
+        await _activationFileCheck;
+        if (!IsVisible || !IsActive) return;
+        var text = Editor.Text;
+        int start = hit.Start, length = hit.Length;
+        if (start > text.Length - length || !text.AsSpan(start, length).SequenceEqual(hit.Text.AsSpan(hit.Start, length)))
+        {
+            // An externally linked document can reload when its window becomes active.
+            var updated = new NoteSearchResults();
+            updated.Update(text, hit.Match, false, false);
+            if (updated.Count == 0)
+            {
+                OpenSearch();
+                SearchTextBox.Text = hit.Match;
+                return;
+            }
+            var next = updated.FirstAtOrAfter(start);
+            (start, length) = updated[Math.Min(next, updated.Count - 1)];
+        }
+        SearchBar.Visibility = Visibility.Collapsed;
+        _searchResults.Clear();
+        SwitchToTextMode();
+        FocusEditorTextArea(false);
+        SelectEditorRange(start, length);
     }
     private void FocusEditorTextArea(bool moveCaretToEnd)
     {
@@ -222,15 +258,33 @@ public partial class NoteWindow : Window
         SettingsButton.ToolTip = UiText.Get("Menu");
         CloseNoteButton.ToolTip = UiText.Get("CloseNote");
         ExportDirtyIndicator.ToolTip = UiText.Get("DirtyExport");
+        ReplaceToggle.ToolTip = ReplaceButton.Content = UiText.Get("Replace");
+        ReplacementText.ToolTip = UiText.Get("ReplaceWith");
+        ReplaceAllButton.Content = UiText.Get("ReplaceAll");
+        System.Windows.Automation.AutomationProperties.SetName(ReplaceToggle, UiText.Get("Replace"));
+        System.Windows.Automation.AutomationProperties.SetName(ReplacementText, UiText.Get("ReplaceWith"));
         BuildContextMenu();
         RefreshReminderMenu();
         UpdateExportPathDisplay();
     }
+    private string ReminderMenuHeader => UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu");
     public void RefreshReminderMenu()
     {
         if (_reminderMenuItem is not null)
-            _reminderMenuItem.Header = UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu");
+            _reminderMenuItem.Header = ReminderMenuHeader;
         ReminderButton.Visibility = _note.Reminder.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
+        UpdateReminderCountdown();
+    }
+    private void UpdateReminderCountdown()
+    {
+        _countdownTimer.Stop();
+        if (!IsVisible || !_note.Reminder.IsEnabled) return;
+        var remaining = _note.Reminder.NextDueUtc - DateTimeOffset.UtcNow;
+        ReminderCountdown.Text = FormatRemainingReminderTime(remaining, compact: true);
+        if (remaining <= TimeSpan.Zero) return;
+        var nextChange = remaining.TotalMinutes >= 1 ? remaining.TotalSeconds % 60 + 0.05 : 1;
+        _countdownTimer.Interval = TimeSpan.FromSeconds(Math.Min(60, nextChange));
+        _countdownTimer.Start();
     }
     private void ReminderButton_ToolTipOpening(object sender, ToolTipEventArgs e)
     {
@@ -238,13 +292,13 @@ public partial class NoteWindow : Window
         var remaining = _note.Reminder.NextDueUtc - DateTimeOffset.UtcNow;
         ReminderButton.ToolTip = FormatRemainingReminderTime(remaining);
     }
-    private static string FormatRemainingReminderTime(TimeSpan remaining)
+    private static string FormatRemainingReminderTime(TimeSpan remaining, bool compact = false)
     {
         if (remaining <= TimeSpan.Zero) return UiText.Get("Soon");
-        if (remaining.TotalDays >= 1) return UiText.Format("RemainingDays", (int)remaining.TotalDays, remaining.Hours, remaining.Minutes);
-        if (remaining.TotalHours >= 1) return UiText.Format("RemainingHours", (int)remaining.TotalHours, remaining.Minutes);
-        if (remaining.TotalMinutes >= 1) return UiText.Format("RemainingMinutes", Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes)));
-        return UiText.Format("RemainingSeconds", Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds)));
+        if (remaining.TotalDays >= 1) return UiText.Format(compact ? "ShortDays" : "RemainingDays", remaining.Days, remaining.Hours, remaining.Minutes);
+        if (remaining.TotalHours >= 1) return UiText.Format(compact ? "ShortHours" : "RemainingHours", remaining.Hours, remaining.Minutes);
+        if (remaining.TotalMinutes >= 1) return UiText.Format(compact ? "ShortMinutes" : "RemainingMinutes", remaining.Minutes);
+        return UiText.Format(compact ? "ShortSeconds" : "RemainingSeconds", (int)Math.Ceiling(remaining.TotalSeconds));
     }
     public void ActivateForReminder()
     {
@@ -595,13 +649,13 @@ public partial class NoteWindow : Window
     }
     private void OpenNoteMenu(bool focusFirstItem)
     {
-        if (_noteContextMenu is null) return;
-        _noteContextMenu.PlacementTarget = SettingsButton;
-        _noteContextMenu.Placement = PlacementMode.Bottom;
-        _noteContextMenu.IsOpen = true;
+        var menu = _headerMenu ??= CreateNoteMenu(includeEditCommands: false);
+        menu.PlacementTarget = SettingsButton;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
         if (!focusFirstItem) return;
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
-            _noteContextMenu.Items.OfType<MenuItem>().FirstOrDefault()?.Focus()));
+            menu.Items.OfType<MenuItem>().FirstOrDefault()?.Focus()));
     }
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
     protected override void OnClosing(CancelEventArgs e)
@@ -613,6 +667,7 @@ public partial class NoteWindow : Window
     }
     protected override void OnClosed(EventArgs e)
     {
+        _countdownTimer.Stop();
         StopTextScrollInertia();
         EndImeComposition();
         if (_imeHwndSource is not null) _imeHwndSource.RemoveHook(ImeWndProc);
@@ -765,7 +820,7 @@ public partial class NoteWindow : Window
     {
         if (InputHitTest(point) is not DependencyObject hit) return false;
         var button = FindAncestor<Button>(hit);
-        return ReferenceEquals(button, NewNoteButton) || ReferenceEquals(button, PinButton) || ReferenceEquals(button, SettingsButton) || ReferenceEquals(button, CloseNoteButton);
+        return ReferenceEquals(button, NewNoteButton) || ReferenceEquals(button, PinButton) || ReferenceEquals(button, ReminderButton) || ReferenceEquals(button, SettingsButton) || ReferenceEquals(button, CloseNoteButton);
     }
     private int GetResizeEdge(System.Windows.Point point)
     {
@@ -783,36 +838,84 @@ public partial class NoteWindow : Window
         1 or 2 => Cursors.SizeWE, 4 or 8 => Cursors.SizeNS, 5 or 10 => Cursors.SizeNWSE,
         6 or 9 => Cursors.SizeNESW, _ => null
     };
-    private void Editor_TextChanged(object? sender, EventArgs e) { if (!_loading) _vm.Text = Editor.Text; UpdateInkScrollSpacer(); }
+    private void Editor_TextChanged(object? sender, EventArgs e)
+    {
+        if (!_loading) _vm.Text = Editor.Text;
+        UpdateInkScrollSpacer();
+        RefreshSearchResults();
+    }
     private void TouchLayout()
     {
         _note.LastModifiedUtc = DateTimeOffset.UtcNow;
         _controller.ScheduleSave();
     }
 
-    private void OpenSearch()
+    private void OpenSearch(bool replace = false)
     {
         UpdateSearchBarLayout();
+        SetReplaceExpanded(replace);
+        if (!SearchBar.IsVisible && Editor.SelectionLength > 0 && Editor.SelectedText.IndexOfAny(['\r', '\n']) < 0)
+            SearchTextBox.Text = Editor.SelectedText;
         SearchBar.Visibility = Visibility.Visible;
-        SearchTextBox.Focus();
-        SearchTextBox.SelectAll();
+        RefreshSearchResults();
+        if (replace && _searchResults.Count > 0 && CurrentSearchIndex() < 0)
+            SelectSearchMatch(_searchResults.FirstAtOrAfter(Editor.CaretOffset));
+        var input = replace && SearchTextBox.Text.Length > 0 ? ReplacementText : SearchTextBox;
+        input.Focus();
+        input.SelectAll();
+    }
+    private void SearchAllNotes()
+    {
+        var query = SearchBar.IsVisible ? SearchTextBox.Text : Editor.SelectedText;
+        if (query.Contains('\n') || query.Contains('\r')) query = "";
+        var dialog = new NoteSearchWindow(_controller.State.Notes, query) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.SelectedMatch is { } match)
+            _controller.ShowSearchResult(match);
+    }
+    private void SetReplaceExpanded(bool expanded)
+    {
+        ReplaceRow.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        ReplaceToggle.Content = expanded ? "▾" : "▸";
+    }
+    private void ReplaceToggle_Click(object sender, RoutedEventArgs e)
+    {
+        SetReplaceExpanded(!ReplaceRow.IsVisible);
+        (ReplaceRow.IsVisible ? ReplacementText : SearchTextBox).Focus();
+    }
+    private void ReplacementText_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { e.Handled = true; ReplaceCurrent(); }
+    }
+    private void Replace_Click(object sender, RoutedEventArgs e) => ReplaceCurrent();
+    private void ReplaceCurrent()
+    {
+        if (_searchResults.Count == 0) return;
+        var index = CurrentSearchIndex();
+        if (index < 0) index = _searchResults.FirstAtOrAfter(Editor.CaretOffset) % _searchResults.Count;
+        var (start, length) = _searchResults[index];
+        var replacement = ReplacementText.Text;
+        Editor.Document.Replace(start, length, replacement);
+        Editor.Select(start + replacement.Length, 0);
+        if (_searchResults.Count > 0) SelectSearchMatch(_searchResults.FirstAtOrAfter(Editor.CaretOffset));
+    }
+    private void ReplaceAll_Click(object sender, RoutedEventArgs e)
+    {
+        var replacement = ReplacementText.Text;
+        // AvalonEdit raises TextChanged after EndUpdate. All offsets refer to the original text.
+        using (Editor.Document.RunUpdate())
+            for (var i = _searchResults.Count - 1; i >= 0; i--)
+            {
+                var (start, length) = _searchResults[i];
+                Editor.Document.Replace(start, length, replacement);
+            }
     }
     private void CloseSearch()
     {
         SearchBar.Visibility = Visibility.Collapsed;
-        _searchSelectionStart = -1;
+        _searchResults.Clear();
         Editor.Focus();
     }
-    private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        _searchSelectionStart = -1;
-        FindSearchMatch(false);
-    }
-    private void SearchOptionChanged(object sender, RoutedEventArgs e)
-    {
-        _searchSelectionStart = -1;
-        FindSearchMatch(false);
-    }
+    private void SearchCriteriaChanged(object sender, RoutedEventArgs e) => RefreshSearchResults(selectFirst: true);
     private void SearchTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key is Key.Enter or Key.Return)
@@ -827,58 +930,53 @@ public partial class NoteWindow : Window
     private void UpdateSearchBarLayout()
     {
         if (SearchBar is null || ActualWidth <= 0) return;
-        SearchBar.Width = Math.Max(120, Math.Min(300, ActualWidth - 24));
+        SearchBar.Width = Math.Max(120, Math.Min(350, ActualWidth - 24));
+        var narrow = SearchBar.Width < 325;
+        Grid.SetRow(SearchCounter, narrow ? 1 : 0);
+        Grid.SetColumn(SearchCounter, narrow ? 0 : 1);
+        Grid.SetColumnSpan(SearchCounter, narrow ? 7 : 1);
     }
     private void FindSearchMatch(bool previous)
     {
-        var query = SearchTextBox.Text;
-        var text = Editor.Text;
-        if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(text)) return;
-        var comparison = SearchCaseCheckBox.IsChecked == true
-            ? StringComparison.CurrentCulture
-            : StringComparison.CurrentCultureIgnoreCase;
-        var start = _searchSelectionStart >= 0
-            ? (previous ? _searchSelectionStart - 1 : _searchSelectionStart + query.Length)
-            : (previous ? text.Length : Math.Clamp(Editor.SelectionStart, 0, text.Length));
-        var index = FindSearchIndex(text, query, start, previous, comparison);
-        if (index < 0)
-        {
-            index = FindSearchIndex(text, query, previous ? text.Length : 0, previous, comparison);
-        }
-        if (index < 0) return;
-        _searchSelectionStart = index;
-        Editor.Select(index, query.Length);
-        var line = Editor.Document.GetLineByOffset(index);
-        Editor.ScrollToLine(line.LineNumber);
+        if (_searchResults.Count == 0) return;
+        var current = CurrentSearchIndex();
+        var index = current >= 0 ? current + (previous ? -1 : 1)
+                                 : _searchResults.FirstAtOrAfter(Editor.CaretOffset) - (previous ? 1 : 0);
+        SelectSearchMatch(index);
     }
-    private int FindSearchIndex(string text, string query, int start, bool previous, StringComparison comparison)
+    private void RefreshSearchResults(bool selectFirst = false)
     {
-        var wholeWord = SearchWordCheckBox.IsChecked == true;
-        if (!previous)
-        {
-            var index = text.IndexOf(query, Math.Clamp(start, 0, text.Length), comparison);
-            while (index >= 0 && wholeWord && !IsWholeWord(text, index, query.Length))
-                index = text.IndexOf(query, index + Math.Max(1, query.Length), comparison);
-            return index;
-        }
-        if (text.Length < query.Length) return -1;
-        var backwardStart = Math.Clamp(start, query.Length - 1, text.Length - 1);
-        var previousIndex = text.LastIndexOf(query, backwardStart, comparison);
-        while (previousIndex >= 0 && wholeWord && !IsWholeWord(text, previousIndex, query.Length))
-        {
-            if (previousIndex == 0) return -1;
-            previousIndex = text.LastIndexOf(query, previousIndex - 1, comparison);
-        }
-        return previousIndex;
+        if (SearchBar?.Visibility != Visibility.Visible) return;
+        _searchResults.Update(Editor.Text, SearchTextBox.Text, SearchCaseCheckBox.IsChecked == true, SearchWordCheckBox.IsChecked == true);
+        if (selectFirst && _searchResults.Count > 0)
+            SelectSearchMatch(_searchResults.FirstAtOrAfter(Editor.SelectionStart));
+        else
+            UpdateSearchCounter();
     }
-    private static bool IsWholeWord(string text, int index, int length)
+    private void SelectSearchMatch(int index)
     {
-        var beforeIsWord = index > 0 && IsWordCharacter(text[index - 1]);
-        var end = index + length;
-        var afterIsWord = end < text.Length && IsWordCharacter(text[end]);
-        return !beforeIsWord && !afterIsWord;
+        if (index < 0) index = _searchResults.Count - 1;
+        else if (index == _searchResults.Count) index = 0;
+        var (start, length) = _searchResults[index];
+        SelectEditorRange(start, length);
+        UpdateSearchCounter();
     }
-    private static bool IsWordCharacter(char value) => char.IsLetterOrDigit(value) || value == '_';
+    private void SelectEditorRange(int start, int length)
+    {
+        Editor.Select(start, length);
+        Editor.ScrollToLine(Editor.Document.GetLineByOffset(start).LineNumber);
+        Editor.TextArea.Caret.BringCaretToView();
+    }
+    private int CurrentSearchIndex() => _searchResults.CurrentIndex(Editor.CaretOffset, Editor.SelectionStart, Editor.SelectionLength);
+    private void UpdateSearchCounter()
+    {
+        if (SearchBar?.Visibility != Visibility.Visible) return;
+        ReplaceButton.IsEnabled = ReplaceAllButton.IsEnabled = _searchResults.Count > 0;
+        SearchCounter.Visibility = SearchTextBox.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        var current = CurrentSearchIndex();
+        SearchCounter.Text = current >= 0 ? $"{current + 1} / {_searchResults.Count}"
+            : _searchResults.Count == 0 ? "0 / 0" : $"— / {_searchResults.Count}";
+    }
 
     private void Editor_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -959,9 +1057,8 @@ public partial class NoteWindow : Window
             e.Handled = true;
             return;
         }
-        if (modifiers == ModifierKeys.Control && e.Key == Key.H)
+        if (modifiers == (ModifierKeys.Control | ModifierKeys.Alt) && (e.Key == Key.H || e.SystemKey == Key.H))
         {
-            if (_reminderAnimationActive) StopReminderAnimation(false);
             HideCurrentNote();
             e.Handled = true;
             return;
@@ -973,7 +1070,9 @@ public partial class NoteWindow : Window
             return;
         }
         if (e.Key is Key.LeftShift or Key.RightShift) UpdateShiftLineCursor();
-        if (ctrl && e.Key == Key.F) { OpenSearch(); e.Handled = true; return; }
+        if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.F) { e.Handled = true; SearchAllNotes(); return; }
+        if (modifiers == ModifierKeys.Control && e.Key == Key.F) { OpenSearch(); e.Handled = true; return; }
+        if (modifiers == ModifierKeys.Control && e.Key == Key.H) { OpenSearch(replace: true); e.Handled = true; return; }
         if (e.Key == Key.Escape && SearchBar.Visibility == Visibility.Visible) { CloseSearch(); e.Handled = true; return; }
         if (e.Key == Key.F5 || e.SystemKey == Key.F5) { SwitchToTextMode(); e.Handled = true; return; }
         if (e.Key == Key.F6 || e.SystemKey == Key.F6) { SwitchToHighlighterMode(); e.Handled = true; return; }
@@ -1653,9 +1752,27 @@ public partial class NoteWindow : Window
     }
     private void BuildContextMenu()
     {
+        _headerMenu = null;
+        _reminderMenuItem = null;
+        var menu = CreateNoteMenu(includeEditCommands: true);
+        TitleArea.ContextMenu = menu; Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
+    }
+    private ContextMenu CreateNoteMenu(bool includeEditCommands)
+    {
         var menu = new ContextMenu();
-        _noteContextMenu = menu;
-        AddTextEditingMenus(menu);
+        AddNoteCommands(menu);
+        if (includeEditCommands)
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(EditCommand("Undo", ApplicationCommands.Undo, "Ctrl+Z"));
+            menu.Items.Add(EditCommand("Redo", ApplicationCommands.Redo, "Ctrl+Y"));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(EditCommand("Cut", ApplicationCommands.Cut, "Ctrl+X"));
+            menu.Items.Add(EditCommand("Copy", ApplicationCommands.Copy, "Ctrl+C"));
+            menu.Items.Add(EditCommand("Paste", ApplicationCommands.Paste, "Ctrl+V"));
+            menu.Items.Add(EditCommand("Delete", ApplicationCommands.Delete, "Delete"));
+            menu.Items.Add(EditCommand("SelectAll", ApplicationCommands.SelectAll, "Ctrl+A"));
+        }
         menu.Items.Add(new Separator());
         var select = new MenuItem { Header = UiText.Get("TextMode"), IsCheckable = true, InputGestureText = "F5" };
         var highlighter = new MenuItem { Header = UiText.Get("HighlighterMode"), IsCheckable = true, InputGestureText = "F6" };
@@ -1679,21 +1796,24 @@ public partial class NoteWindow : Window
         highlighter.Click += (_, _) => { SwitchToHighlighterMode(); UpdateToolModeMenu(); };
         pen.Click += (_, _) => { SwitchToPenMode(); UpdateToolModeMenu(); };
         erase.Click += (_, _) => { SwitchToEraserMode(); UpdateToolModeMenu(); };
-        menu.Opened += (_, _) => UpdateToolModeMenu();
         menu.Items.Add(select); menu.Items.Add(highlighter); menu.Items.Add(pen); menu.Items.Add(erase); AddPenMenus(menu);
         menu.Items.Add(new Separator());
         AddSyntaxLanguageMenu(menu); AddNoteColorMenu(menu);
         menu.Items.Add(new Separator());
-        var reminder = new MenuItem { Header = UiText.Get(_note.Reminder.IsEnabled ? "ReminderEdit" : "ReminderMenu"), InputGestureText = "Ctrl+R" };
-        _reminderMenuItem = reminder;
+        var reminder = new MenuItem { Header = ReminderMenuHeader, InputGestureText = "Ctrl+R" };
         reminder.Click += Reminder_Click;
         menu.Items.Add(reminder);
         menu.Items.Add(new Separator());
         var settings = new MenuItem { Header = $"{UiText.Get("Settings")}..." };
         settings.Click += Settings_Click;
         menu.Items.Add(settings);
-        menu.Closed += (_, _) => { menu.PlacementTarget = null; menu.Placement = PlacementMode.MousePoint; };
-        TitleArea.ContextMenu = menu; Surface.ContextMenu = menu; Editor.ContextMenu = menu; RestoreInk();
+        menu.Opened += (_, _) =>
+        {
+            _reminderMenuItem = reminder;
+            reminder.Header = ReminderMenuHeader;
+            UpdateToolModeMenu();
+        };
+        return menu;
     }
     private void Reminder_Click(object sender, RoutedEventArgs e)
     {
@@ -1809,7 +1929,10 @@ public partial class NoteWindow : Window
         _luaHighlighting = HighlightingLoader.Load(reader, HighlightingManager.Instance);
         return _luaHighlighting;
     }
-    private void AddTextEditingMenus(ContextMenu menu)
+    private MenuItem EditCommand(string label, RoutedUICommand command, string shortcut) =>
+        new() { Header = UiText.Get(label), Command = command, CommandTarget = Editor.TextArea, InputGestureText = shortcut };
+
+    private void AddNoteCommands(ContextMenu menu)
     {
         var save = new MenuItem { Header = $"{UiText.Get("SaveNote")}...", InputGestureText = "Ctrl+S" };
         save.Click += (_, _) => _ = ExportCurrentNoteAsync(false);
@@ -1817,24 +1940,22 @@ public partial class NoteWindow : Window
         var saveAs = new MenuItem { Header = $"{UiText.Get("SaveAs")}...", InputGestureText = "Ctrl+Shift+S" };
         saveAs.Click += (_, _) => _ = ExportCurrentNoteAsync(true);
         menu.Items.Add(saveAs);
-        var hideNote = new MenuItem { Header = UiText.Get("HideNote"), InputGestureText = "Ctrl+H" };
+        var hideNote = new MenuItem { Header = UiText.Get("HideNote"), InputGestureText = "Ctrl+Alt+H" };
         hideNote.Click += (_, _) => HideCurrentNote();
         menu.Items.Add(hideNote);
         var search = new MenuItem { Header = UiText.Get("Search"), InputGestureText = "Ctrl+F" };
         search.Click += (_, _) => OpenSearch();
         menu.Items.Add(search);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Undo"), Command = ApplicationCommands.Undo, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+Z" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Redo"), Command = ApplicationCommands.Redo, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+Y" });
-        menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Cut"), Command = ApplicationCommands.Cut, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+X" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Copy"), Command = ApplicationCommands.Copy, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+C" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Paste"), Command = ApplicationCommands.Paste, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+V" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("Delete"), Command = ApplicationCommands.Delete, CommandTarget = Editor.TextArea, InputGestureText = "Delete" });
-        menu.Items.Add(new MenuItem { Header = UiText.Get("SelectAll"), Command = ApplicationCommands.SelectAll, CommandTarget = Editor.TextArea, InputGestureText = "Ctrl+A" });
+        var replace = new MenuItem { Header = UiText.Get("Replace"), InputGestureText = "Ctrl+H" };
+        replace.Click += (_, _) => OpenSearch(replace: true);
+        menu.Items.Add(replace);
+        var searchNotes = new MenuItem { Header = UiText.Get("SearchNotes"), InputGestureText = "Ctrl+Shift+F" };
+        searchNotes.Click += (_, _) => SearchAllNotes();
+        menu.Items.Add(searchNotes);
     }
-    private void HideCurrentNote()
+    internal void HideCurrentNote()
     {
+        if (_reminderAnimationActive) StopReminderAnimation(false);
         CommitImeComposition();
         _controller.Hide(_note);
     }
@@ -1942,10 +2063,10 @@ public partial class NoteWindow : Window
         ExportPathTextBlock.Visibility = string.IsNullOrWhiteSpace(path) ? Visibility.Collapsed : Visibility.Visible;
         ExportDirtyIndicator.Visibility = !string.IsNullOrWhiteSpace(path) && _note.IsExportDirty ? Visibility.Visible : Visibility.Collapsed;
     }
-    private async void NoteWindow_Activated(object? sender, EventArgs e)
+    private void NoteWindow_Activated(object? sender, EventArgs e)
     {
         _controller.NoteActivated(_note);
-        await CheckForExternalFileChangeAsync();
+        if (!_checkingExternalFile) _activationFileCheck = CheckForExternalFileChangeAsync();
     }
     private void RememberExportFileVersion()
     {
@@ -2091,9 +2212,10 @@ public partial class NoteWindow : Window
         foreach (var (name, value) in new[] { (UiText.Get("Black"), Colors.Black), (UiText.Get("DarkGray"), Colors.DarkSlateGray), (UiText.Get("Red"), Colors.Red), (UiText.Get("Blue"), Colors.Blue), (UiText.Get("Green"), Colors.Green), (UiText.Get("Orange"), Colors.Orange), (UiText.Get("Purple"), Colors.Purple) })
         {
             var swatch = new System.Windows.Controls.Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(2), BorderBrush = new SolidColorBrush(Color.FromArgb(90, 0, 0, 0)), BorderThickness = new Thickness(1), Background = new SolidColorBrush(value) };
-            var item = new MenuItem { Header = name, Icon = swatch, IsCheckable = true, IsChecked = Ink.DefaultDrawingAttributes.Color == value };
+            var item = new MenuItem { Header = name, Icon = swatch, IsCheckable = true, Tag = value };
             item.Click += (_, _) => { Ink.DefaultDrawingAttributes.Color = value; Highlighter.DefaultDrawingAttributes.Color = MakeHighlighterColor(value); _controller.State.Settings.DefaultPenColor = value.ToString(); _controller.ScheduleSave(); foreach (MenuItem sibling in colors.Items) sibling.IsChecked = ReferenceEquals(sibling, item); }; colors.Items.Add(item);
         }
+        colors.SubmenuOpened += (_, _) => { foreach (MenuItem item in colors.Items) item.IsChecked = item.Tag is Color value && Ink.DefaultDrawingAttributes.Color == value; };
         var widths = new MenuItem { Header = UiText.Get("PenThickness") };
         foreach (var (name, value) in new[] { (UiText.Get("VeryThin"), 1d), (UiText.Get("Thin"), 2d), (UiText.Get("Normal"), DefaultPenThickness), (UiText.Get("Thick"), 6d), (UiText.Get("VeryThick"), 10d) })
         {

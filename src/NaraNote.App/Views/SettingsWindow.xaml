@@ -1,31 +1,9 @@
 <Window x:Class="NaraNote.App.Views.SettingsWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:loc="clr-namespace:NaraNote.App.Localization"
  Title="NaraNote" Width="440" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
- UseLayoutRounding="True" SnapsToDevicePixels="True" Icon="/NaraNote;component/Resources/NaraNote.ico"
- Background="#FFF2F2F7" FontFamily="Segoe UI" Foreground="#FF1C1C1E" PreviewKeyDown="Window_PreviewKeyDown">
+ Icon="/NaraNote;component/Resources/NaraNote.ico" Style="{StaticResource DialogWindowStyle}" PreviewKeyDown="Window_PreviewKeyDown">
  <Window.Resources>
-  <Style x:Key="CardStyle" TargetType="Border">
-   <Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#18000000"/><Setter Property="BorderThickness" Value="1"/>
-   <Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="16"/>
-  </Style>
-  <Style x:Key="SectionLabelStyle" TargetType="TextBlock">
-   <Setter Property="FontSize" Value="12"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="#FF6E6E73"/>
-  </Style>
-  <Style TargetType="Button">
-   <Setter Property="Height" Value="34"/><Setter Property="MinWidth" Value="74"/><Setter Property="Padding" Value="14,0"/>
-   <Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="#FF1C1C1E"/><Setter Property="BorderBrush" Value="#20000000"/>
-   <Setter Property="BorderThickness" Value="1"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Cursor" Value="Hand"/>
-   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-    <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
-     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-    </Border>
-    <ControlTemplate.Triggers>
-     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#FFF5F5F7"/></Trigger>
-     <Trigger Property="IsPressed" Value="True"><Setter TargetName="Surface" Property="Opacity" Value="0.72"/></Trigger>
-     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
-    </ControlTemplate.Triggers>
-   </ControlTemplate></Setter.Value></Setter>
-  </Style>
+  <Style TargetType="Button" BasedOn="{StaticResource RoundedButtonStyle}"/>
   <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
    <Setter Property="Background" Value="#FF0A84FF"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderBrush" Value="#FF0A84FF"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
@@ -35,20 +13,7 @@
     <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#FF0077E6"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Surface" Property="Opacity" Value="0.72"/></Trigger></ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value></Setter>
   </Style>
-  <Style TargetType="TextBox">
-   <Setter Property="Height" Value="34"/><Setter Property="Background" Value="#FFF7F7F9"/><Setter Property="BorderBrush" Value="#22000000"/><Setter Property="BorderThickness" Value="1"/>
-   <Setter Property="Padding" Value="10,4"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
-    <Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
-     <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
-    </Border>
-    <ControlTemplate.Triggers>
-     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#660A84FF"/></Trigger>
-     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#FF0A84FF"/><Setter TargetName="Surface" Property="BorderThickness" Value="2"/></Trigger>
-     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
-    </ControlTemplate.Triggers>
-   </ControlTemplate></Setter.Value></Setter>
-  </Style>
+  <Style TargetType="TextBox" BasedOn="{StaticResource DialogTextBoxStyle}"/>
   <Style TargetType="ComboBox">
    <Setter Property="Height" Value="34"/><Setter Property="Background" Value="#FFF7F7F9"/><Setter Property="BorderBrush" Value="#22000000"/><Setter Property="BorderThickness" Value="1"/>
    <Setter Property="Padding" Value="9,4"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -102,12 +67,12 @@
  <Grid Margin="22,18,22,20">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <StackPanel Grid.Row="0" Margin="2,0,0,14">
-   <TextBlock Text="{loc:Loc Settings}" FontSize="22" FontWeight="SemiBold"/>
+   <TextBlock Text="{loc:Loc Settings}" Style="{StaticResource DialogTitleStyle}"/>
   </StackPanel>
 
-  <Border Grid.Row="1" Style="{StaticResource CardStyle}">
+  <Border Grid.Row="1" Style="{StaticResource DialogCardStyle}">
    <StackPanel>
-    <TextBlock Text="{loc:Loc NewNote}" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,12"/>
+    <TextBlock Text="{loc:Loc NewNote}" Style="{StaticResource DialogSectionLabelStyle}" Margin="0,0,0,12"/>
     <TextBlock Text="{loc:Loc Font}" FontWeight="SemiBold" Margin="0,0,0,7"/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="82"/></Grid.ColumnDefinitions>
      <ComboBox x:Name="FontBox" Margin="0,0,8,0" IsEditable="True" IsTextSearchEnabled="True" MaxDropDownHeight="240" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"/>
@@ -125,9 +90,9 @@
    </StackPanel>
   </Border>
 
-  <Border Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,10,0,0">
+  <Border Grid.Row="2" Style="{StaticResource DialogCardStyle}" Margin="0,10,0,0">
    <StackPanel>
-    <TextBlock Text="{loc:Loc GeneralSettings}" Style="{StaticResource SectionLabelStyle}" Margin="0,0,0,12"/>
+    <TextBlock Text="{loc:Loc GeneralSettings}" Style="{StaticResource DialogSectionLabelStyle}" Margin="0,0,0,12"/>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="184"/></Grid.ColumnDefinitions>
      <TextBlock Text="{loc:Loc Language}" FontWeight="SemiBold" VerticalAlignment="Center"/>
      <ComboBox x:Name="LanguageBox" Grid.Column="1" PreviewMouseLeftButtonDown="LanguageBox_PreviewMouseLeftButtonDown"/>

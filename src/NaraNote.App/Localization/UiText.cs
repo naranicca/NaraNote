@@ -73,6 +73,26 @@ public static class UiText
 
     static UiText()
     {
+        Add("en", ("SearchNotes","Search all notes"), ("SearchHitCount","Matches: {0}"), ("UntitledNote","Untitled note"),
+            ("SearchNotesPrompt","Type a word to find it in open and hidden notes."), ("SearchingNotes","Searching…"),
+            ("Replace","Replace"), ("ReplaceWith","Replace with"), ("ReplaceAll","Replace all"),
+            ("ShortDays","{0}d {1}h"), ("ShortHours","{0}h {1}m"), ("ShortMinutes","{0}m"), ("ShortSeconds","{0}s"));
+        Add("ko", ("SearchNotes","전체 노트 검색"), ("SearchHitCount","검색 결과 {0}개"), ("UntitledNote","제목 없는 노트"),
+            ("SearchNotesPrompt","열린 노트와 숨긴 노트에서 찾을 단어를 입력하세요."), ("SearchingNotes","검색 중…"),
+            ("Replace","바꾸기"), ("ReplaceWith","바꿀 내용"), ("ReplaceAll","모두 바꾸기"),
+            ("ShortDays","{0}일 {1}시간"), ("ShortHours","{0}시간 {1}분"), ("ShortMinutes","{0}분"), ("ShortSeconds","{0}초"));
+        Add("fr", ("SearchNotes","Rechercher dans toutes les notes"), ("SearchHitCount","Résultats : {0}"), ("UntitledNote","Note sans titre"),
+            ("SearchNotesPrompt","Saisissez un mot à rechercher dans les notes ouvertes et masquées."), ("SearchingNotes","Recherche en cours…"),
+            ("Replace","Remplacer"), ("ReplaceWith","Remplacer par"), ("ReplaceAll","Tout remplacer"),
+            ("ShortDays","{0} j {1} h"), ("ShortHours","{0} h {1} min"), ("ShortMinutes","{0} min"), ("ShortSeconds","{0} s"));
+        Add("es", ("SearchNotes","Buscar en todas las notas"), ("SearchHitCount","Coincidencias: {0}"), ("UntitledNote","Nota sin título"),
+            ("SearchNotesPrompt","Escribe una palabra para buscarla en las notas abiertas y ocultas."), ("SearchingNotes","Buscando…"),
+            ("Replace","Reemplazar"), ("ReplaceWith","Reemplazar por"), ("ReplaceAll","Reemplazar todo"),
+            ("ShortDays","{0} d {1} h"), ("ShortHours","{0} h {1} min"), ("ShortMinutes","{0} min"), ("ShortSeconds","{0} s"));
+        Add("vi", ("SearchNotes","Tìm trong tất cả ghi chú"), ("SearchHitCount","Số kết quả: {0}"), ("UntitledNote","Ghi chú chưa có tiêu đề"),
+            ("SearchNotesPrompt","Nhập từ cần tìm trong các ghi chú đang mở và đang ẩn."), ("SearchingNotes","Đang tìm…"),
+            ("Replace","Thay thế"), ("ReplaceWith","Thay thế bằng"), ("ReplaceAll","Thay thế tất cả"),
+            ("ShortDays","{0} ngày {1} giờ"), ("ShortHours","{0} giờ {1} phút"), ("ShortMinutes","{0} phút"), ("ShortSeconds","{0} giây"));
         Add("en", ("Search","Search"));
         Add("ko", ("Search","\uac80\uc0c9"));
         Add("fr", ("Search","Rechercher"));

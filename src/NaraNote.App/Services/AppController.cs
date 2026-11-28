@@ -8,6 +8,7 @@ using NaraNote.App.Views;
 using NaraNote.App.Localization;
 using NaraNote.Core.Models;
 using NaraNote.Core.Services;
+using NaraNote.Core.Utilities;
 using NaraNote.Infrastructure.Logging;
 using Application = System.Windows.Application;
 
@@ -20,7 +21,7 @@ public sealed class AppController : IDisposable
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private CancellationTokenSource? _debounce; private NotifyIcon? _tray;
     private System.Drawing.Icon? _appIcon;
-    private GlobalHotKeyManager? _hotKeys; private bool _allVisible = true;
+    private GlobalHotKeyManager? _hotKeys;
     private Guid? _lastActiveNoteId;
     private DispatcherTimer? _reminderTimer;
     public AppState State { get; private set; } = new();
@@ -88,7 +89,12 @@ public sealed class AppController : IDisposable
         State.Settings.FileParameterNoteHeight = Math.Max(160, note.Height);
     }
     public void NoteActivated(NoteData note) { _lastActiveNoteId = note.Id; note.LastModifiedUtc = DateTimeOffset.UtcNow; }
-    public void Show(NoteData note, bool clearHiddenState = true, bool center = false)
+    public void ShowSearchResult(NoteBodyMatch match)
+    {
+        if (State.Notes.FirstOrDefault(n => n.IsOpen && n.Id == match.NoteId) is { } note)
+            Show(note, match: match);
+    }
+    public void Show(NoteData note, bool clearHiddenState = true, bool center = false, NoteBodyMatch? match = null)
     {
         ClearMissingExportPath(note);
         note.IsOpen = true;
@@ -107,7 +113,7 @@ public sealed class AppController : IDisposable
         EnsureFullyVisible(window, center);
         RefreshTaskbarProxy();
         window.Activate();
-        window.FocusEditor();
+        window.FocusEditor(match);
         ScheduleSave();
     }
     public void Hide(NoteData note)
@@ -354,14 +360,23 @@ public sealed class AppController : IDisposable
         var toggle = State.Settings.GlobalHotKeys.GetValueOrDefault("ToggleNotes", "Ctrl+Alt+H");
         if (useNewNote)
         {
-            if (!_hotKeys.Register(100, newNote, () => Application.Current.Dispatcher.Invoke(() => NewNote()))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {newNote}."));
+            if (!_hotKeys.Register(100, newNote, () => RunGlobalShortcut(newNote, () => NewNote()))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {newNote}."));
         }
         else _hotKeys.Unregister(100);
         if (useToggleNotes)
         {
-            if (!_hotKeys.Register(101, toggle, () => Application.Current.Dispatcher.Invoke(() => { _allVisible = !_allVisible; ToggleAll(_allVisible); }))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {toggle}."));
+            if (!_hotKeys.Register(101, toggle, () => RunGlobalShortcut(toggle, () => ToggleAll(!_windows.Values.Any(w => w.IsVisible))))) _logger.Error("HotKey", new InvalidOperationException($"Could not register {toggle}."));
         }
         else _hotKeys.Unregister(101);
+    }
+    private void RunGlobalShortcut(string shortcut, Action globalAction)
+    {
+        // RegisterHotKey consumes the keystroke before the focused note receives PreviewKeyDown.
+        if (HotKeyDefinition.TryParse(shortcut, out var key) &&
+            key == new HotKeyDefinition(HotKeyModifiers.Control | HotKeyModifiers.Alt, 'H') &&
+            _windows.Values.FirstOrDefault(window => window.IsActive) is { } active)
+            active.HideCurrentNote();
+        else globalAction();
     }
     public void Dispose() { _reminderTimer?.Stop(); _hotKeys?.Dispose(); _tray?.Dispose(); _appIcon?.Dispose(); _debounce?.Dispose(); _saveGate.Dispose(); }
 }
